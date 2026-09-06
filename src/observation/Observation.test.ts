@@ -13,6 +13,28 @@ describe('createSimulatedObservation', () => {
     expect(obs.provenance).toBe('SIMULATED');
     expect(obs.status).toBe('OK');
   });
+
+  it('defaults domain context fields to null when omitted', () => {
+    const obs = createSimulatedObservation({ type: 'drone.altitude.agl', value: 1, unit: 'm', timestamp: Date.now(), source: 'sim-sensor:barometer' });
+    expect(obs.farmId).toBeNull();
+    expect(obs.fieldId).toBeNull();
+    expect(obs.sensorId).toBeNull();
+  });
+
+  it('carries provided domain context through', () => {
+    const obs = createSimulatedObservation({
+      type: 'drone.altitude.agl',
+      value: 1,
+      unit: 'm',
+      timestamp: Date.now(),
+      source: 'sim-sensor:barometer',
+      farmId: 'farm_1',
+      fieldId: 'field_1',
+      missionId: 'mission_1',
+      droneId: 'drone_1'
+    });
+    expect(obs).toMatchObject({ farmId: 'farm_1', fieldId: 'field_1', missionId: 'mission_1', droneId: 'drone_1' });
+  });
 });
 
 describe('createUnavailableObservation', () => {

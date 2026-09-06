@@ -38,6 +38,8 @@
                 </svg>
                 <span>AgriAether <small>Simulation Core</small></span>
             </div>
+            <div class="world-breadcrumb" id="worldBreadcrumb">Loading world…</div>
+            <div class="world-sensors" id="worldSensorList"></div>
         </div>
         <div class="hud-center">
             <div class="flight-mode" id="flightMode">
@@ -215,6 +217,10 @@
             </button>
         </div>
         <div class="control-group">
+            <button class="ctrl-btn" id="btnInspector" title="Toggle the observation data inspector">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M8 4v16"/></svg>
+                <span>Inspector</span>
+            </button>
             <button class="ctrl-btn" id="btnReset" title="Reset View">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
                 <span>Reset</span>
@@ -234,6 +240,15 @@
     <div id="minimap">
         <canvas id="minimapCanvas" width="180" height="180"></canvas>
         <div class="minimap-label">SIMULATION MAP</div>
+    </div>
+
+    <!-- Data Inspector (developer-facing, closed by default) -->
+    <div id="dataInspector" class="hidden">
+        <div class="inspector-header">
+            <span>OBSERVATION INSPECTOR</span>
+            <span class="panel-status live">SIMULATED</span>
+        </div>
+        <div id="dataInspectorList"></div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

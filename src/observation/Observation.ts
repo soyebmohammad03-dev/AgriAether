@@ -9,6 +9,8 @@
  * `provenance: 'MEASURED'` — there is no real sensor in this codebase yet.
  */
 
+import { createId } from '../domain/id';
+
 export type Provenance =
   | 'MEASURED' // read directly from a calibrated physical instrument
   | 'SIMULATED' // produced by the simulation engine, no physical referent
@@ -29,6 +31,13 @@ export interface ObservationLocation {
   z: number;
 }
 
+/**
+ * Domain context linking an Observation back into the Farm/Field/Zone/
+ * Mission/Drone/Sensor world (Phase 2). All optional and independently
+ * nullable — an Observation is valid on its own, and most of this context
+ * is genuinely unknown for some observations (e.g. a manually-entered soil
+ * sample has no missionId or droneId).
+ */
 export interface Observation<T = number> {
   id: string;
   /** Dot-namespaced quantity name, e.g. "drone.altitude", "drone.battery.soc". */
@@ -46,6 +55,15 @@ export interface Observation<T = number> {
   /** 0–1 confidence, or null when the provenance type has no meaningful confidence (e.g. USER_REPORTED). */
   confidence: number | null;
   status: ObservationStatus;
+  /** Domain context — which farm/field/zone/sensor/mission/drone this reading belongs to, where known. */
+  farmId?: string | null;
+  fieldId?: string | null;
+  zoneId?: string | null;
+  sensorId?: string | null;
+  missionId?: string | null;
+  droneId?: string | null;
+  /** Small bag for attributes that don't belong on every Observation (e.g. sample depth). Never scientific values disguised as metadata. */
+  metadata?: Record<string, string | number | boolean> | null;
 }
 
 const SIMULATION_SOURCE_PREFIX = 'sim';
@@ -80,24 +98,30 @@ export function assertValidObservation(obs: Observation<unknown>): void {
   }
 }
 
-let counter = 0;
-function nextId(type: string): string {
-  counter += 1;
-  return `obs_${type}_${Date.now()}_${counter}`;
+export interface ObservationContext {
+  farmId?: string | null;
+  fieldId?: string | null;
+  zoneId?: string | null;
+  sensorId?: string | null;
+  missionId?: string | null;
+  droneId?: string | null;
+  metadata?: Record<string, string | number | boolean> | null;
 }
 
 /** Build a SIMULATED observation. This is the only factory the simulation layer should use. */
-export function createSimulatedObservation<T>(params: {
-  type: string;
-  value: T;
-  unit: string | null;
-  timestamp: number;
-  location?: ObservationLocation | null;
-  source: string;
-  confidence?: number | null;
-}): Observation<T> {
+export function createSimulatedObservation<T>(
+  params: {
+    type: string;
+    value: T;
+    unit: string | null;
+    timestamp: number;
+    location?: ObservationLocation | null;
+    source: string;
+    confidence?: number | null;
+  } & ObservationContext
+): Observation<T> {
   const obs: Observation<T> = {
-    id: nextId(params.type),
+    id: createId(`obs_${params.type}`),
     type: params.type,
     value: params.value,
     unit: params.unit,
@@ -106,20 +130,25 @@ export function createSimulatedObservation<T>(params: {
     source: params.source,
     provenance: 'SIMULATED',
     confidence: params.confidence ?? null,
-    status: 'OK'
+    status: 'OK',
+    farmId: params.farmId ?? null,
+    fieldId: params.fieldId ?? null,
+    zoneId: params.zoneId ?? null,
+    sensorId: params.sensorId ?? null,
+    missionId: params.missionId ?? null,
+    droneId: params.droneId ?? null,
+    metadata: params.metadata ?? null
   };
   assertValidObservation(obs);
   return obs;
 }
 
 /** Build an explicit "we have nothing" observation — used instead of inventing a value. */
-export function createUnavailableObservation(params: {
-  type: string;
-  timestamp: number;
-  source: string;
-}): Observation<never> {
+export function createUnavailableObservation(
+  params: { type: string; timestamp: number; source: string } & ObservationContext
+): Observation<never> {
   const obs: Observation<never> = {
-    id: nextId(params.type),
+    id: createId(`obs_${params.type}`),
     type: params.type,
     value: null as never,
     unit: null,
@@ -128,7 +157,14 @@ export function createUnavailableObservation(params: {
     source: params.source,
     provenance: 'UNKNOWN',
     confidence: null,
-    status: 'UNAVAILABLE'
+    status: 'UNAVAILABLE',
+    farmId: params.farmId ?? null,
+    fieldId: params.fieldId ?? null,
+    zoneId: params.zoneId ?? null,
+    sensorId: params.sensorId ?? null,
+    missionId: params.missionId ?? null,
+    droneId: params.droneId ?? null,
+    metadata: params.metadata ?? null
   };
   assertValidObservation(obs);
   return obs;

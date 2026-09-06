@@ -1,3 +1,3 @@
 import { App } from './app/App';
 
-new App().run();
+App.create().then((app) => app.run());

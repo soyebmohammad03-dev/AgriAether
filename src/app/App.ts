@@ -9,6 +9,13 @@ import { SimulationEngine } from '../simulation/SimulationEngine';
 import { TelemetryGenerator } from '../telemetry/TelemetryGenerator';
 import { Hud, setButtonActive } from '../ui/Hud';
 import { Minimap } from '../ui/Minimap';
+import { WorldPanel } from '../ui/WorldPanel';
+import { DataInspector, ObservationLog } from '../ui/DataInspector';
+import { createRepositories, type AgriAetherRepositories } from '../persistence/repositories';
+import { WorldRegistry } from '../world/WorldRegistry';
+import { ensureDemoWorld, type DemoWorldIds } from '../world/demoWorld';
+import { createAgriculturalEvent } from '../domain/AgriculturalEvent';
+import type { Observation, ObservationContext } from '../observation/Observation';
 
 const CAMERA_BUTTON_IDS: Record<CameraMode, string> = {
   orbit: 'btnOrbit',
@@ -17,7 +24,10 @@ const CAMERA_BUTTON_IDS: Record<CameraMode, string> = {
   fpv: 'btnFPV'
 };
 
-/** Wires the scene, simulation, telemetry pipeline, and UI together; owns the render loop. */
+/** How often a sampled Observation is persisted to IndexedDB — every tick would be 60Hz of writes for no benefit at this stage. */
+const OBSERVATION_PERSIST_INTERVAL_MS = 2000;
+
+/** Wires the scene, simulation, domain/persistence, and UI together; owns the render loop. */
 export class App {
   private readonly bundle = createSceneBundle(document.getElementById('droneCanvas') as HTMLCanvasElement);
   private readonly terrain = new Terrain(this.bundle.scene);
@@ -26,8 +36,10 @@ export class App {
   private readonly mission = buildDefaultMission();
   private readonly flightPathVisual = new FlightPathVisual(this.bundle.scene, this.mission);
   private readonly simulation = new SimulationEngine(this.mission);
-  private readonly telemetryGenerator = new TelemetryGenerator();
   private readonly hud = new Hud();
+  private readonly worldPanel = new WorldPanel();
+  private readonly dataInspector = new DataInspector();
+  private readonly observationLog = new ObservationLog();
   private readonly minimap = new Minimap(
     document.getElementById('minimapCanvas') as HTMLCanvasElement,
     this.flightPathVisual.curve.getPoints(80)
@@ -36,12 +48,43 @@ export class App {
   private readonly clock = new THREE.Clock();
   private simSeconds = 0;
   private paused = false;
+  private lastPersistedAt = 0;
+  private missionStartedEventRecorded = false;
 
-  constructor() {
+  private constructor(
+    private readonly repositories: AgriAetherRepositories,
+    private readonly world: WorldRegistry,
+    private readonly worldIds: DemoWorldIds,
+    private readonly telemetryGenerator: TelemetryGenerator
+  ) {
     this.cameraRig.setMode('orbit');
     this.wireControls();
     this.simulation.start();
     window.addEventListener('resize', () => resizeSceneBundle(this.bundle));
+
+    const farm = this.world.getFarm(this.worldIds.farmId);
+    const field = this.world.getField(this.worldIds.fieldId);
+    if (farm && field) {
+      this.worldPanel.render(farm, field, 'Simulation UAV-01', this.world.listSensors());
+    }
+  }
+
+  /** Loads/seeds the domain world before the render loop starts — the one async step in an otherwise synchronous app. */
+  static async create(): Promise<App> {
+    const repositories = createRepositories();
+    const world = await WorldRegistry.load(repositories);
+    const generator = new TelemetryGenerator();
+    const worldIds = await ensureDemoWorld(world, generator);
+    return new App(repositories, world, worldIds, generator);
+  }
+
+  private get observationContext(): ObservationContext {
+    return {
+      farmId: this.worldIds.farmId,
+      fieldId: this.worldIds.fieldId,
+      missionId: this.mission.id,
+      droneId: this.worldIds.droneId
+    };
   }
 
   private wireControls(): void {
@@ -81,6 +124,11 @@ export class App {
       setButtonActive('btnScan', scanOn);
     });
 
+    document.getElementById('btnInspector')?.addEventListener('click', () => {
+      const open = this.dataInspector.toggle();
+      setButtonActive('btnInspector', open);
+    });
+
     document.getElementById('btnPause')?.addEventListener('click', (event) => {
       this.paused = !this.paused;
       this.simulation.setPaused(this.paused);
@@ -93,6 +141,28 @@ export class App {
     setCameraMode('orbit');
   }
 
+  private recordMissionStartedIfNeeded(flightState: string): void {
+    if (this.missionStartedEventRecorded || flightState !== 'MISSION') return;
+    this.missionStartedEventRecorded = true;
+    void this.world.recordEvent(
+      createAgriculturalEvent({
+        fieldId: this.worldIds.fieldId,
+        type: 'MISSION_STARTED',
+        description: `Mission "${this.mission.name}" started`,
+        source: 'SIMULATED'
+      })
+    );
+  }
+
+  private persistObservationSampleIfDue(observations: ReadonlyArray<Observation<unknown>>): void {
+    const now = performance.now();
+    if (now - this.lastPersistedAt < OBSERVATION_PERSIST_INTERVAL_MS) return;
+    this.lastPersistedAt = now;
+    for (const obs of observations) {
+      void this.repositories.observations.save(obs);
+    }
+  }
+
   private tick = (): void => {
     requestAnimationFrame(this.tick);
     const dt = Math.min(this.clock.getDelta(), 0.05);
@@ -102,12 +172,25 @@ export class App {
     }
 
     const droneState = this.simulation.tick(dt);
-    const telemetry = this.telemetryGenerator.generate(droneState);
+    const telemetry = this.telemetryGenerator.generate(droneState, this.observationContext);
+    const observations: Observation<unknown>[] = [
+      telemetry.position,
+      telemetry.orientation,
+      telemetry.altitude,
+      telemetry.battery,
+      telemetry.groundSpeed,
+      telemetry.heading,
+      ...(telemetry.missionProgress ? [telemetry.missionProgress] : [])
+    ];
+    for (const obs of observations) this.observationLog.push(obs);
+    this.persistObservationSampleIfDue(observations);
+    this.recordMissionStartedIfNeeded(droneState.flightState);
 
     this.droneModel.update(droneState, dt, this.simSeconds);
     this.cameraRig.update(droneState);
     this.minimap.draw(droneState);
     this.hud.update(droneState, telemetry, this.mission, this.simSeconds);
+    this.dataInspector.render(this.observationLog);
 
     this.bundle.renderer.render(this.bundle.scene, this.bundle.camera);
   };

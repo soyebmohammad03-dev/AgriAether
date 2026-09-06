@@ -1,5 +1,5 @@
 import type { DroneState } from '../drone/DroneState';
-import { createSimulatedObservation, type Observation } from '../observation/Observation';
+import { createSimulatedObservation, type Observation, type ObservationContext } from '../observation/Observation';
 import type { Sensor } from '../sensors/Sensor';
 import { SimulatedGpsSensor, type SimulationCoordinate } from '../sensors/SimulatedGpsSensor';
 import { SimulatedImuSensor, type ImuReading } from '../sensors/SimulatedImuSensor';
@@ -31,30 +31,37 @@ export interface Telemetry {
 }
 
 export class TelemetryGenerator {
-  private readonly gps: Sensor<SimulationCoordinate> = new SimulatedGpsSensor();
-  private readonly imu: Sensor<ImuReading> = new SimulatedImuSensor();
-  private readonly barometer: Sensor<number> = new SimulatedBarometerSensor();
-  private readonly battery: Sensor<number> = new SimulatedBatterySensor();
+  readonly gps: Sensor<SimulationCoordinate> = new SimulatedGpsSensor();
+  readonly imu: Sensor<ImuReading> = new SimulatedImuSensor();
+  readonly barometer: Sensor<number> = new SimulatedBarometerSensor();
+  readonly battery: Sensor<number> = new SimulatedBatterySensor();
 
-  generate(state: DroneState): Telemetry {
+  /** The sensors backing this generator, for registering matching SensorRecords — see world/demoWorld.ts. */
+  get sensors(): ReadonlyArray<Sensor<unknown>> {
+    return [this.gps, this.imu, this.barometer, this.battery];
+  }
+
+  generate(state: DroneState, context: ObservationContext = {}): Telemetry {
     return {
-      position: this.gps.read(state),
-      orientation: this.imu.read(state),
-      altitude: this.barometer.read(state),
-      battery: this.battery.read(state),
+      position: this.gps.read(state, context),
+      orientation: this.imu.read(state, context),
+      altitude: this.barometer.read(state, context),
+      battery: this.battery.read(state, context),
       groundSpeed: createSimulatedObservation({
         type: 'drone.ground_speed',
         value: state.groundSpeed,
         unit: 'm/s',
         timestamp: state.timestamp,
-        source: 'simulation-engine'
+        source: 'simulation-engine',
+        ...context
       }),
       heading: createSimulatedObservation({
         type: 'drone.heading',
         value: state.heading,
         unit: 'deg',
         timestamp: state.timestamp,
-        source: 'simulation-engine'
+        source: 'simulation-engine',
+        ...context
       }),
       missionProgress: state.mission.progress === null
         ? null
@@ -63,7 +70,8 @@ export class TelemetryGenerator {
             value: state.mission.progress,
             unit: 'fraction',
             timestamp: state.timestamp,
-            source: 'simulation-engine'
+            source: 'simulation-engine',
+            ...context
           })
     };
   }
