@@ -45,5 +45,10 @@ export const SENSOR_CAPABILITY_CATALOG: Record<SensorKind, SensorKindProfile> = 
   'rain-gauge': { observableQuantities: ['precipitation'], rawDataType: 'scalar', supportedIndices: [], temporalCharacteristic: 'continuous', calibrationRequired: false },
   anemometer: { observableQuantities: ['wind_speed', 'wind_direction'], rawDataType: 'scalar', supportedIndices: [], temporalCharacteristic: 'continuous', calibrationRequired: false },
   'air-temperature': { observableQuantities: ['air_temperature'], rawDataType: 'scalar', supportedIndices: [], temporalCharacteristic: 'continuous', calibrationRequired: false },
-  humidity: { observableQuantities: ['relative_humidity'], rawDataType: 'scalar', supportedIndices: [], temporalCharacteristic: 'continuous', calibrationRequired: false }
+  humidity: { observableQuantities: ['relative_humidity'], rawDataType: 'scalar', supportedIndices: [], temporalCharacteristic: 'continuous', calibrationRequired: false },
+
+  'leaf-wetness': { observableQuantities: ['leaf_wetness'], rawDataType: 'scalar', supportedIndices: [], temporalCharacteristic: 'continuous', calibrationRequired: true },
+  'solar-radiation': { observableQuantities: ['solar_radiation'], rawDataType: 'scalar', supportedIndices: [], temporalCharacteristic: 'continuous', calibrationRequired: true },
+  'irrigation-flow': { observableQuantities: ['flow_rate'], rawDataType: 'scalar', supportedIndices: [], temporalCharacteristic: 'continuous', calibrationRequired: true },
+  'water-quality': { observableQuantities: ['electrical_conductivity', 'ph'], rawDataType: 'scalar', supportedIndices: [], temporalCharacteristic: 'continuous', calibrationRequired: true }
 };

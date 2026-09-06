@@ -31,6 +31,8 @@ import { computeFieldCoverage } from '../data/Coverage';
 import { detectDataGaps } from '../data/DataGap';
 import { evaluateMissionDataRequirements } from '../data/MissionDataRequirement';
 import { buildFieldSummary } from '../data/FieldSummary';
+import { SENSOR_CAPABILITY_CATALOG } from '../sensing/SensorCapabilityCatalog';
+import type { SensorKind } from '../domain/SensorRecord';
 
 const CAMERA_BUTTON_IDS: Record<CameraMode, string> = {
   orbit: 'btnOrbit',
@@ -292,7 +294,22 @@ export class App {
       analysisEvaluations: this.analysisEvaluations
     });
 
-    this.dataCatalogPanel.render({ summary, gaps, missionRequirements, datasets });
+    const deployedSensors = this.world.listSensors();
+    const sensorRegistry = (Object.keys(SENSOR_CAPABILITY_CATALOG) as SensorKind[]).map((kind) => ({
+      kind,
+      deployedCount: deployedSensors.filter((s) => s.kind === kind).length
+    }));
+
+    this.dataCatalogPanel.render({
+      summary,
+      gaps,
+      missionRequirements,
+      datasets,
+      soilSamples: this.world.listSoilSamplesForField(field.id),
+      groundSamples: this.world.listGroundSamplesForField(field.id),
+      cropObservations: this.world.listCropObservationsForField(field.id),
+      sensorRegistry
+    });
   }
 
   private refreshSensorHealth(): void {

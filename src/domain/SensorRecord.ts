@@ -5,7 +5,8 @@ export type SensorKind =
   | 'gps' | 'imu' | 'barometer' | 'battery' // drone, implemented as of Phase 1/2
   | 'rgb-camera' | 'multispectral-camera' | 'thermal-camera' | 'lidar' // drone, not yet implemented
   | 'soil-moisture' | 'soil-temperature' | 'soil-ec' | 'soil-ph' | 'soil-npk' // ground, not yet implemented
-  | 'weather-station' | 'rain-gauge' | 'anemometer' | 'air-temperature' | 'humidity'; // fixed-station, not yet implemented
+  | 'weather-station' | 'rain-gauge' | 'anemometer' | 'air-temperature' | 'humidity' // fixed-station, not yet implemented
+  | 'leaf-wetness' | 'solar-radiation' | 'irrigation-flow' | 'water-quality'; // ground/fixed-station, not yet implemented (Phase 6)
 
 export type CalibrationStatus = 'CALIBRATED' | 'UNCALIBRATED' | 'UNKNOWN';
 

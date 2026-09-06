@@ -535,6 +535,101 @@ one is a data-acquisition problem, not an architecture problem, and
 inventing a plausible-looking one would violate the project's own
 scientific-honesty rules.
 
+## Ground sensing, measurement contracts, and crop observations (Phase 6)
+
+Phase 6 extends the sensor/observation architecture to the quantities a real
+farm actually needs beyond drone telemetry and weather — without installing
+any hardware or fabricating a reading for a sensor that doesn't exist. Every
+addition here is a **capability declaration or an ingestion pathway**, ready
+for a real reading the moment one arrives; none of it produces a live number
+today unless a real `GROUND_SENSOR` sample is registered.
+
+**New sensor kinds** (`domain/SensorRecord.ts`'s `SensorKind`, cataloged in
+`sensing/SensorCapabilityCatalog.ts`): `leaf-wetness`, `solar-radiation`,
+`irrigation-flow`, `water-quality`, joining the soil/weather kinds already
+declared in Phase 2–4. None are deployed by the demo world — the Data
+Catalog's new **Sensor Capability Registry** section lists all of them
+against what `WorldRegistry.listSensors()` actually returns, so "declared in
+the taxonomy" and "physically deployed" are never confused.
+
+**`sensors/GroundSample.ts`** is the non-soil counterpart to
+`soil/SoilSample.ts`: the same `method` → `provenance` mapping
+(`GROUND_SENSOR` → `MEASURED`, `EXTERNAL_DATASET` → `EXTERNAL`, `SIMULATION`
+→ `SIMULATED`, enforced by `createGroundSample`), covering air temperature,
+relative humidity, leaf wetness, rainfall, wind speed/direction, solar
+radiation, irrigation flow rate, and irrigation/source water EC and pH.
+`sensors/groundSampleToObservations.ts` explodes a sample into canonical
+`Observation` records exactly like `soilSampleToObservations.ts` does,
+including a sensor-capability guard (`assertGroundSampleSensorCapable`) that
+makes "a leaf-wetness sensor reporting wind speed" a thrown error, not a
+silently accepted value.
+
+**`sensing/Units.ts`** holds the explicit, tested unit conversions the app
+actually needs (°C↔°F, mm↔in, m/s↔km/h, hPa↔kPa) plus `isWithinRange`, a
+small range-membership check. **`sensing/DataQuality.ts`** gained an
+`OUT_OF_RANGE` state: `deriveDataQuality` now also takes a value and a
+`PlausibleRange` and flags a reading that falls outside a documented,
+generous real-world bound — the same "generous extreme, not normal-operating
+window" philosophy `weather/WeatherObservation.ts`'s `PLAUSIBLE_RANGES`
+already established — without dropping or clamping the value.
+`GroundSample`'s per-quantity plausible ranges live in
+`sensors/GroundSample.ts`'s `MEASUREMENT_PLAUSIBLE_RANGES`.
+
+**`domain/CropObservation.ts`** is a point-in-time crop observation —
+growth stage, cultivar, and a free-text `observedCondition` string, each
+tagged with its own `Provenance`, timestamp, and confidence — distinct from
+`domain/Crop.ts`'s `CropCycle`, which is slow-changing planting
+configuration, not a stream of readings. There is no health/stress/disease
+score anywhere in this type: turning an observation into a diagnosis needs a
+validated model this codebase does not have (see `ModelRegistry.ts`'s
+deployment gate).
+
+**`soil/SoilDataProvider.ts`** defines the interface a real soil data source
+would implement, mirroring `weather/WeatherProvider.ts`. It ships with
+exactly one implementation, `UnconfiguredSoilProvider`, which always rejects
+rather than returning a value. This is a deliberate decision, not a gap: the
+free, no-credential soil datasets surveyed for this phase are gridded
+weather-model estimates (e.g. reanalysis-derived soil moisture), not
+ground-truth sensor readings, and treating a modeled quantity as a physical
+soil measurement would break the same rule that already governs
+weather-vs-soil elsewhere in this README. `soil/SoilSample.ts`'s
+`GROUND_SENSOR`/`LABORATORY`/`FIELD_SAMPLING`/`ZONE_SAMPLING`/
+`EXTERNAL_DATASET` pathways are what a real soil sensor or lab result would
+flow through instead.
+
+**`sensing/SensorFusion.ts`** gained `categorizeSource`/
+`countBySourceCategory`, grouping a `FusionInventory`'s observations into
+`drone` / `ground-sensor` / `soil` / `weather` / `historical` / `other` by
+structural `type`/`source` prefix — still never combined into a score;
+Part 6 of the brief ("preserve provenance, timestamp, quality, and
+uncertainty" per source) is the same constraint `buildFusionInventory` has
+enforced since Phase 4, now with source-stream visibility added.
+
+**`sensing/ObservationQuery.ts`** answers the temporal questions the brief
+asks for from data that's actually there: `observationsSince` (a field's
+observations at or after a cutoff), `findMissingObservationTypes` (which
+expected quantities have zero observations for a zone), and
+`latestObservationOfType` (the most recent reading of a quantity, or `null`
+— never a synthesized last-known-value). These sit alongside, not instead
+of, `TemporalChange.ts`'s pairwise comparison.
+
+**Persistence**: `WorldRegistry` gained `registerSoilSample`/
+`registerGroundSample`/`registerCropObservation` (each validated against a
+real, already-registered field, same as every other `register*` method) and
+matching `list*ForField` queries; three new IndexedDB stores —
+`soilSamples`, `groundSamples`, `cropObservations` — were added in schema
+version 4. The demo world registers none of them: the Data Catalog's new
+**Ground Observations** section renders an honest "no soil/ground/crop data
+recorded — no hardware connected" state rather than a fabricated fixture.
+
+**What Phase 6 deliberately does not include**: any real ground-sensor
+hardware or a soil data provider implementation (see above), a crop-health
+score of any kind, a trained model over any of these new observation types,
+and a `DataQuality` value on every existing measurement path back-filled
+with a plausible range — that's a per-quantity exercise left for whichever
+quantity gets a real deployment first, not something to bulk-retrofit
+speculatively.
+
 ## Security
 
 Vite bundles any `VITE_`-prefixed environment variable straight into the
@@ -559,9 +654,11 @@ contract the domain layer depends on — nothing in `domain/`, `world/`, or
   SQLite-via-WASM (real SQL and an easier future server migration, but a
   WASM asset and a heavier dependency for a need IndexedDB already meets).
   It's async (fine for a 60fps loop), structured, and works fully offline.
-  A `weatherCache` object store was added in Phase 3 (schema version 2) and
-  a `datasets` store in Phase 5 (schema version 3) — each migration only
-  adds missing stores, verified live to never touch existing data.
+  A `weatherCache` object store was added in Phase 3 (schema version 2), a
+  `datasets` store in Phase 5 (schema version 3), and `soilSamples`/
+  `groundSamples`/`cropObservations` stores in Phase 6 (schema version 4) —
+  each migration only adds missing stores, verified live to never touch
+  existing data.
 - **InMemoryRepository** — a trivial Map-backed implementation used in tests
   (no IndexedDB under Vitest's node environment) and as a fallback.
 
@@ -611,26 +708,31 @@ src/
   observation/  The Observation type + provenance invariants — the core
                 scientific-honesty boundary
   sensors/      Sensor interface + capability guard + simulated GPS/IMU/
-                barometer/battery sensors
+                barometer/battery sensors; Phase 6 added GroundSample (+
+                groundSampleToObservations) for non-soil ground/fixed-
+                station quantities
   telemetry/    TelemetryGenerator — the only place DroneState becomes
                 Observations
   domain/       Farm, Field, Zone, Crop, SensorRecord, SensorDeployment,
                 AgriculturalEvent, GeoReference — plain data + factories,
-                no persistence or UI knowledge
+                no persistence or UI knowledge; Phase 6 added
+                CropObservation (point-in-time, distinct from CropCycle)
   geo/          Coordinate/CRS types, Turf-based geometry utilities, the
                 DEMO_ONLY georeference transform, demo geometry fixtures
   weather/      WeatherObservation, WeatherProvider (+ OpenMeteoProvider,
                 MockWeatherProvider), normalization/validation,
                 WeatherService (cache + staleness)
-  soil/         SoilSample (method-implies-provenance), 
-                soilSampleToObservations (+ sensor-capability guard)
+  soil/         SoilSample (method-implies-provenance),
+                soilSampleToObservations (+ sensor-capability guard),
+                SoilDataProvider (Phase 6, unconfigured — see above)
   sensing/      Remote-sensing taxonomy, SpectralIndex/IndexEngine,
                 ThermalReading/features, AgriculturalAnalysis,
                 AnalysisRegistry, ModelRegistry, TemporalChange,
                 SpatialAggregation, SensorFusion, SensorHealth, Lineage,
                 DataQuality, ImageAsset — the Phase 4 sensing/analytics
                 architecture; synthetic/ holds the seeded test-only
-                dataset generator
+                dataset generator; Phase 6 added Units.ts and
+                ObservationQuery.ts
   data/         Phase 5: DatasetRecord registry, GeoJsonIngestion,
                 CrsTransform, Raster/RasterGrid, FieldClip,
                 SpatialStatistics, TemporalAlignment, Coverage, DataGap,
@@ -690,18 +792,30 @@ pipeline without the UI changing at all.
    aware quality, temporal-compatibility gating, coverage/data-gap/mission-
    requirement reporting, and the Data Catalog panel — still no live
    external dataset provider and no real (non-fixture) raster.
-6. First real ML model + first real external dataset — once a genuine
+6. ~~Ground sensor architecture + measurement contracts~~ — this
+   repository, Phase 6: new ground/fixed-station sensor kinds (leaf
+   wetness, solar radiation, irrigation flow, water quality) and
+   `GroundSample`/`groundSampleToObservations` alongside `SoilSample`,
+   explicit tested unit conversions (`sensing/Units.ts`) and an
+   `OUT_OF_RANGE` data-quality state, a point-in-time `CropObservation`
+   distinct from `CropCycle`, an intentionally unconfigured
+   `SoilDataProvider` interface, source-category grouping in
+   `SensorFusion`, temporal `ObservationQuery` helpers, and the Data
+   Catalog's new Ground Observations / Sensor Capability Registry
+   sections — still no real ground-sensor hardware, no soil data provider,
+   and no crop-health scoring of any kind.
+7. First real ML model + first real external dataset — once a genuine
    labeled dataset exists (real or high-fidelity simulated imagery with
    verified labels) and/or a live `DatasetProvider` implementation is
    added, train and register a model against `ModelRegistry`'s contract; a
    real (non-Null-Island) field boundary and CRS pipeline if real field
    data becomes available.
-7. Autonomous missions + AI decision engine — coverage planning, temporal
+8. Autonomous missions + AI decision engine — coverage planning, temporal
    comparison across flights, sensor fusion converted into a validated
    prediction with preserved uncertainty.
-8. Real hardware + community platform — first real flight-controller/sensor
+9. Real hardware + community platform — first real flight-controller/sensor
    (including camera/multispectral/thermal/soil) integration behind the
    `Sensor`/drone abstractions proven here; open datasets and plugin
    contributions.
 
-Phase 6 is not started and requires separate approval before work begins.
+Phase 7 is not started and requires separate approval before work begins.

@@ -8,6 +8,9 @@ import type { AgriculturalEvent } from '../domain/AgriculturalEvent';
 import type { Observation } from '../observation/Observation';
 import type { WeatherCacheEntry } from '../weather/WeatherCacheEntry';
 import type { DatasetRecord } from '../data/Dataset';
+import type { SoilSample } from '../soil/SoilSample';
+import type { GroundSample } from '../sensors/GroundSample';
+import type { CropObservation } from '../domain/CropObservation';
 import type { Repository } from './Repository';
 import { InMemoryRepository } from './InMemoryRepository';
 import { IndexedDbRepository } from './IndexedDbRepository';
@@ -23,6 +26,9 @@ export interface AgriAetherRepositories {
   agriculturalEvents: Repository<AgriculturalEvent>;
   weatherCache: Repository<WeatherCacheEntry>;
   datasets: Repository<DatasetRecord>;
+  soilSamples: Repository<SoilSample>;
+  groundSamples: Repository<GroundSample>;
+  cropObservations: Repository<CropObservation>;
 }
 
 export function createInMemoryRepositories(): AgriAetherRepositories {
@@ -36,7 +42,10 @@ export function createInMemoryRepositories(): AgriAetherRepositories {
     observations: new InMemoryRepository<Observation<unknown>>(),
     agriculturalEvents: new InMemoryRepository<AgriculturalEvent>(),
     weatherCache: new InMemoryRepository<WeatherCacheEntry>(),
-    datasets: new InMemoryRepository<DatasetRecord>()
+    datasets: new InMemoryRepository<DatasetRecord>(),
+    soilSamples: new InMemoryRepository<SoilSample>(),
+    groundSamples: new InMemoryRepository<GroundSample>(),
+    cropObservations: new InMemoryRepository<CropObservation>()
   };
 }
 
@@ -51,7 +60,10 @@ export function createIndexedDbRepositories(): AgriAetherRepositories {
     observations: new IndexedDbRepository<Observation<unknown>>('observations'),
     agriculturalEvents: new IndexedDbRepository<AgriculturalEvent>('agriculturalEvents'),
     weatherCache: new IndexedDbRepository<WeatherCacheEntry>('weatherCache'),
-    datasets: new IndexedDbRepository<DatasetRecord>('datasets')
+    datasets: new IndexedDbRepository<DatasetRecord>('datasets'),
+    soilSamples: new IndexedDbRepository<SoilSample>('soilSamples'),
+    groundSamples: new IndexedDbRepository<GroundSample>('groundSamples'),
+    cropObservations: new IndexedDbRepository<CropObservation>('cropObservations')
   };
 }
 

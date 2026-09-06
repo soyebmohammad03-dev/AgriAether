@@ -9,6 +9,9 @@ import { createSensorDeployment } from '../domain/SensorDeployment';
 import { createCropCycle } from '../domain/Crop';
 import { createAgriculturalEvent } from '../domain/AgriculturalEvent';
 import { createDatasetRecord } from '../data/Dataset';
+import { createSoilSample } from '../soil/SoilSample';
+import { createGroundSample } from '../sensors/GroundSample';
+import { createCropObservation } from '../domain/CropObservation';
 
 async function freshRegistry(): Promise<WorldRegistry> {
   return WorldRegistry.load(createInMemoryRepositories());
@@ -59,6 +62,21 @@ describe('WorldRegistry relationship invariants', () => {
     await expect(registry.registerDataset(dataset)).rejects.toThrow(/unknown field/);
   });
 
+  it('a soil sample cannot reference a nonexistent field', async () => {
+    const sample = createSoilSample({ fieldId: 'field_does_not_exist', method: 'LABORATORY', measurements: { ph: 6.5 } });
+    await expect(registry.registerSoilSample(sample)).rejects.toThrow(/unknown field/);
+  });
+
+  it('a ground sample cannot reference a nonexistent field', async () => {
+    const sample = createGroundSample({ fieldId: 'field_does_not_exist', method: 'SIMULATION', measurements: { airTemperatureC: 20 } });
+    await expect(registry.registerGroundSample(sample)).rejects.toThrow(/unknown field/);
+  });
+
+  it('a crop observation cannot reference a nonexistent field', async () => {
+    const observation = createCropObservation({ fieldId: 'field_does_not_exist', source: 'USER_REPORTED' });
+    await expect(registry.registerCropObservation(observation)).rejects.toThrow(/unknown field/);
+  });
+
   it('accepts the full valid chain: farm -> field -> zone -> sensor -> deployment', async () => {
     const farm = await registry.registerFarm(createFarm({ name: 'Demo Farm', geoReference: { kind: 'simulation' } }));
     const field = await registry.registerField(createField({ farmId: farm.id, name: 'Field 01', geoReference: { kind: 'simulation' } }));
@@ -73,5 +91,21 @@ describe('WorldRegistry relationship invariants', () => {
     expect(registry.listFieldsForFarm(farm.id)).toHaveLength(1);
     expect(registry.listZonesForField(field.id)).toHaveLength(1);
     expect(registry.listDeploymentsFor({ kind: 'zone', id: zone.id })).toEqual([deployment]);
+  });
+
+  it('registers and lists soil samples, ground samples, and crop observations scoped to their field', async () => {
+    const farm = await registry.registerFarm(createFarm({ name: 'Demo Farm', geoReference: { kind: 'simulation' } }));
+    const field = await registry.registerField(createField({ farmId: farm.id, name: 'Field 01', geoReference: { kind: 'simulation' } }));
+    const otherField = await registry.registerField(createField({ farmId: farm.id, name: 'Field 02', geoReference: { kind: 'simulation' } }));
+
+    await registry.registerSoilSample(createSoilSample({ fieldId: field.id, method: 'LABORATORY', measurements: { ph: 6.5 } }));
+    await registry.registerSoilSample(createSoilSample({ fieldId: otherField.id, method: 'LABORATORY', measurements: { ph: 7.0 } }));
+    await registry.registerGroundSample(createGroundSample({ fieldId: field.id, method: 'SIMULATION', measurements: { airTemperatureC: 20 } }));
+    await registry.registerCropObservation(createCropObservation({ fieldId: field.id, source: 'USER_REPORTED' }));
+
+    expect(registry.listSoilSamplesForField(field.id)).toHaveLength(1);
+    expect(registry.listSoilSamplesForField(otherField.id)).toHaveLength(1);
+    expect(registry.listGroundSamplesForField(field.id)).toHaveLength(1);
+    expect(registry.listCropObservationsForField(field.id)).toHaveLength(1);
   });
 });

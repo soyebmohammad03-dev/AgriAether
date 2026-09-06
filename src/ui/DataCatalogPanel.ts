@@ -2,6 +2,15 @@ import type { DatasetRecord } from '../data/Dataset';
 import type { FieldSummary } from '../data/FieldSummary';
 import type { DataGap } from '../data/DataGap';
 import type { MissionDataRequirement } from '../data/MissionDataRequirement';
+import type { SoilSample } from '../soil/SoilSample';
+import type { GroundSample } from '../sensors/GroundSample';
+import type { CropObservation } from '../domain/CropObservation';
+import type { SensorKind } from '../domain/SensorRecord';
+
+export interface SensorRegistryRow {
+  kind: SensorKind;
+  deployedCount: number;
+}
 
 /**
  * "Mission control for agricultural intelligence," not a spreadsheet: one
@@ -24,9 +33,18 @@ export class DataCatalogPanel {
     return this.open;
   }
 
-  render(params: { summary: FieldSummary; gaps: DataGap[]; missionRequirements: MissionDataRequirement[]; datasets: DatasetRecord[] }): void {
+  render(params: {
+    summary: FieldSummary;
+    gaps: DataGap[];
+    missionRequirements: MissionDataRequirement[];
+    datasets: DatasetRecord[];
+    soilSamples: SoilSample[];
+    groundSamples: GroundSample[];
+    cropObservations: CropObservation[];
+    sensorRegistry: SensorRegistryRow[];
+  }): void {
     if (!this.content) return;
-    const { summary, gaps, missionRequirements, datasets } = params;
+    const { summary, gaps, missionRequirements, datasets, soilSamples, groundSamples, cropObservations, sensorRegistry } = params;
 
     const coverageRows = Object.entries(summary.coverage.sensorCoverage)
       .map(([category, status]) => `<div class="catalog-kv"><span>${category}</span><span class="${status === 'available' ? 'catalog-ok' : 'catalog-muted'}">${status}</span></div>`)
@@ -50,6 +68,40 @@ export class DataCatalogPanel {
           .join('')
       : '<div class="catalog-muted">No datasets registered.</div>';
 
+    const soilRows = soilSamples.length
+      ? soilSamples
+          .map(
+            (s) =>
+              `<div class="catalog-dataset"><strong>Soil (${s.method})</strong> — provenance: ${s.provenance}, measurements: ${Object.keys(s.measurements).join(', ')}${s.zoneId ? `, zone: ${s.zoneId}` : ''}</div>`
+          )
+          .join('')
+      : '<div class="catalog-muted">No soil observations recorded. No physical soil sensor or laboratory sample has been registered for this field — see soil/SoilSample.ts and soil/SoilDataProvider.ts.</div>';
+
+    const groundRows = groundSamples.length
+      ? groundSamples
+          .map(
+            (s) =>
+              `<div class="catalog-dataset"><strong>Ground (${s.method})</strong> — provenance: ${s.provenance}, measurements: ${Object.keys(s.measurements).join(', ')}</div>`
+          )
+          .join('')
+      : '<div class="catalog-muted">No ground-station observations recorded. No weather-station, rain-gauge, leaf-wetness, or other ground sensor is currently deployed.</div>';
+
+    const cropRows = cropObservations.length
+      ? cropObservations
+          .map(
+            (c) =>
+              `<div class="catalog-dataset"><strong>Crop observation</strong> — stage: ${c.growthStage}, source: ${c.source}${c.observedCondition ? `, "${c.observedCondition}"` : ''}</div>`
+          )
+          .join('')
+      : '<div class="catalog-muted">No crop observations recorded. No health/stress/disease score is ever fabricated in its place.</div>';
+
+    const registryRows = sensorRegistry
+      .map(
+        (row) =>
+          `<div class="catalog-kv"><span>${row.kind}</span><span class="${row.deployedCount > 0 ? 'catalog-ok' : 'catalog-muted'}">${row.deployedCount > 0 ? `${row.deployedCount} deployed` : 'no hardware connected'}</span></div>`
+      )
+      .join('');
+
     this.content.innerHTML = [
       `<div class="catalog-section"><h4>Field Summary — ${summary.fieldName}</h4>`,
       `<div class="catalog-kv"><span>Area</span><span>${summary.areaHectares !== null ? summary.areaHectares.toFixed(2) + ' ha' : 'unknown'}</span></div>`,
@@ -61,7 +113,9 @@ export class DataCatalogPanel {
       `<div class="catalog-section"><h4>Coverage</h4>${coverageRows}</div>`,
       `<div class="catalog-section"><h4>Data Gaps</h4>${gapRows}</div>`,
       `<div class="catalog-section"><h4>Mission Data Requirements</h4>${missionRows}</div>`,
-      `<div class="catalog-section"><h4>Dataset Catalog</h4>${datasetRows}</div>`
+      `<div class="catalog-section"><h4>Dataset Catalog</h4>${datasetRows}</div>`,
+      `<div class="catalog-section"><h4>Ground Observations</h4>${soilRows}${groundRows}${cropRows}</div>`,
+      `<div class="catalog-section"><h4>Sensor Capability Registry</h4><div class="catalog-muted">Every sensor kind AgriAether's domain model can represent, cross-checked against what is actually deployed — never a live reading invented for a kind with no hardware.</div>${registryRows}</div>`
     ].join('');
   }
 }

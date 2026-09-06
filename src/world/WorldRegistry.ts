@@ -6,6 +6,9 @@ import type { SensorRecord } from '../domain/SensorRecord';
 import type { SensorDeployment } from '../domain/SensorDeployment';
 import type { AgriculturalEvent } from '../domain/AgriculturalEvent';
 import type { DatasetRecord } from '../data/Dataset';
+import type { SoilSample } from '../soil/SoilSample';
+import type { GroundSample } from '../sensors/GroundSample';
+import type { CropObservation } from '../domain/CropObservation';
 import type { AgriAetherRepositories } from '../persistence/repositories';
 
 /**
@@ -27,12 +30,15 @@ export class WorldRegistry {
   private readonly sensorDeployments = new Map<string, SensorDeployment>();
   private readonly agriculturalEvents = new Map<string, AgriculturalEvent>();
   private readonly datasets = new Map<string, DatasetRecord>();
+  private readonly soilSamples = new Map<string, SoilSample>();
+  private readonly groundSamples = new Map<string, GroundSample>();
+  private readonly cropObservations = new Map<string, CropObservation>();
 
   private constructor(private readonly repositories: AgriAetherRepositories) {}
 
   static async load(repositories: AgriAetherRepositories): Promise<WorldRegistry> {
     const registry = new WorldRegistry(repositories);
-    const [farms, fields, zones, cropCycles, sensors, deployments, events, datasets] = await Promise.all([
+    const [farms, fields, zones, cropCycles, sensors, deployments, events, datasets, soilSamples, groundSamples, cropObservations] = await Promise.all([
       repositories.farms.list(),
       repositories.fields.list(),
       repositories.zones.list(),
@@ -40,7 +46,10 @@ export class WorldRegistry {
       repositories.sensors.list(),
       repositories.sensorDeployments.list(),
       repositories.agriculturalEvents.list(),
-      repositories.datasets.list()
+      repositories.datasets.list(),
+      repositories.soilSamples.list(),
+      repositories.groundSamples.list(),
+      repositories.cropObservations.list()
     ]);
     for (const farm of farms) registry.farms.set(farm.id, farm);
     for (const field of fields) registry.fields.set(field.id, field);
@@ -50,6 +59,9 @@ export class WorldRegistry {
     for (const deployment of deployments) registry.sensorDeployments.set(deployment.id, deployment);
     for (const event of events) registry.agriculturalEvents.set(event.id, event);
     for (const dataset of datasets) registry.datasets.set(dataset.id, dataset);
+    for (const sample of soilSamples) registry.soilSamples.set(sample.id, sample);
+    for (const sample of groundSamples) registry.groundSamples.set(sample.id, sample);
+    for (const observation of cropObservations) registry.cropObservations.set(observation.id, observation);
     return registry;
   }
 
@@ -135,6 +147,46 @@ export class WorldRegistry {
 
   listDatasetsForField(fieldId: string): DatasetRecord[] {
     return Array.from(this.datasets.values()).filter((d) => d.fieldId === fieldId);
+  }
+
+  /** Requires an existing field so a sample can never reference a field that isn't part of the world — the same referential-integrity discipline as every other register* method here. */
+  async registerSoilSample(sample: SoilSample): Promise<SoilSample> {
+    if (!this.fields.has(sample.fieldId)) {
+      throw new Error(`SoilSample references unknown field "${sample.fieldId}"`);
+    }
+    this.soilSamples.set(sample.id, sample);
+    await this.repositories.soilSamples.save(sample);
+    return sample;
+  }
+
+  listSoilSamplesForField(fieldId: string): SoilSample[] {
+    return Array.from(this.soilSamples.values()).filter((s) => s.fieldId === fieldId);
+  }
+
+  async registerGroundSample(sample: GroundSample): Promise<GroundSample> {
+    if (!this.fields.has(sample.fieldId)) {
+      throw new Error(`GroundSample references unknown field "${sample.fieldId}"`);
+    }
+    this.groundSamples.set(sample.id, sample);
+    await this.repositories.groundSamples.save(sample);
+    return sample;
+  }
+
+  listGroundSamplesForField(fieldId: string): GroundSample[] {
+    return Array.from(this.groundSamples.values()).filter((s) => s.fieldId === fieldId);
+  }
+
+  async registerCropObservation(observation: CropObservation): Promise<CropObservation> {
+    if (!this.fields.has(observation.fieldId)) {
+      throw new Error(`CropObservation references unknown field "${observation.fieldId}"`);
+    }
+    this.cropObservations.set(observation.id, observation);
+    await this.repositories.cropObservations.save(observation);
+    return observation;
+  }
+
+  listCropObservationsForField(fieldId: string): CropObservation[] {
+    return Array.from(this.cropObservations.values()).filter((o) => o.fieldId === fieldId);
   }
 
   getFarm(id: string): Farm | null {
