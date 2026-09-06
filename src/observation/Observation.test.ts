@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertValidObservation, createSimulatedObservation, createUnavailableObservation, type Observation } from './Observation';
+import { assertValidObservation, createPredictedObservation, createSimulatedObservation, createUnavailableObservation, type Observation } from './Observation';
 
 describe('createSimulatedObservation', () => {
   it('always tags provenance as SIMULATED', () => {
@@ -108,5 +108,70 @@ describe('assertValidObservation', () => {
       status: 'OK'
     };
     expect(() => assertValidObservation(obs)).toThrow(/confidence/);
+  });
+
+  it('an external-provider source can never claim SIMULATED provenance (weather cannot become a drone reading)', () => {
+    const obs: Observation<number> = {
+      id: 'x',
+      type: 'weather.air_temperature',
+      value: 20,
+      unit: 'degC',
+      timestamp: Date.now(),
+      location: null,
+      source: 'external:open-meteo',
+      provenance: 'SIMULATED',
+      confidence: null,
+      status: 'OK'
+    };
+    expect(() => assertValidObservation(obs)).toThrow(/external-provider source/);
+  });
+
+  it('a model source can never claim MEASURED provenance — a prediction is not a measurement', () => {
+    const obs: Observation<number> = {
+      id: 'x',
+      type: 'crop.stress_class_confidence',
+      value: 0.8,
+      unit: null,
+      timestamp: Date.now(),
+      location: null,
+      source: 'model:crop-stress-v1',
+      provenance: 'MEASURED',
+      confidence: 0.8,
+      status: 'OK'
+    };
+    expect(() => assertValidObservation(obs)).toThrow(/model source/);
+  });
+
+  it('a synthetic dataset source can never claim MEASURED — it cannot be silently promoted to real data', () => {
+    const obs: Observation<number> = {
+      id: 'x',
+      type: 'multispectral.ndvi',
+      value: 0.5,
+      unit: null,
+      timestamp: Date.now(),
+      location: null,
+      source: 'synthetic-dataset-generator',
+      provenance: 'MEASURED',
+      confidence: null,
+      status: 'OK'
+    };
+    expect(() => assertValidObservation(obs)).toThrow(/simulated or synthetic source/);
+  });
+});
+
+describe('createPredictedObservation', () => {
+  it('always tags provenance PREDICTED and sources it to the model', () => {
+    const obs = createPredictedObservation({
+      type: 'crop.stress_class_confidence',
+      value: 0.72,
+      unit: null,
+      timestamp: Date.now(),
+      modelId: 'crop-stress-v1',
+      modelVersion: '0.1.0',
+      confidence: 0.72
+    });
+    expect(obs.provenance).toBe('PREDICTED');
+    expect(obs.source).toBe('model:crop-stress-v1');
+    expect(obs.metadata).toMatchObject({ modelVersion: '0.1.0' });
   });
 });

@@ -23,6 +23,8 @@ export interface CropCycle {
   plantingDate: number | null;
   harvestDate: number | null;
   growthStage: GrowthStage;
+  /** Free-text description if known (e.g. "drip, twice weekly"); null means genuinely unknown, never inferred from the field/zone existing. */
+  irrigationRegime: string | null;
   /** How this record came to exist — e.g. USER_REPORTED for a farmer-entered planting date, UNKNOWN if nothing is known yet. */
   source: Provenance;
 }
@@ -45,6 +47,7 @@ export function createCropCycle(params: {
   plantingDate?: number | null;
   harvestDate?: number | null;
   growthStage?: GrowthStage;
+  irrigationRegime?: string | null;
   source?: Provenance;
 }): CropCycle {
   if (!params.fieldId) {
@@ -58,6 +61,7 @@ export function createCropCycle(params: {
     plantingDate: params.plantingDate ?? null,
     harvestDate: params.harvestDate ?? null,
     growthStage: params.growthStage ?? 'UNKNOWN',
+    irrigationRegime: params.irrigationRegime ?? null,
     source: params.source ?? 'UNKNOWN'
   };
 }

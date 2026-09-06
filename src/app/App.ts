@@ -23,6 +23,9 @@ import { DEMO_FIELD_ANCHOR } from '../geo/demoGeometry';
 import { OpenMeteoProvider } from '../weather/OpenMeteoProvider';
 import { WeatherService } from '../weather/WeatherService';
 import { weatherObservationToObservations } from '../weather/weatherObservationToObservations';
+import { evaluateAllAnalyses, type AnalysisEvaluation } from '../sensing/AnalysisRegistry';
+import { evaluateSensorHealth } from '../sensing/SensorHealth';
+import { AnalysisRegistryPanel } from '../ui/AnalysisRegistryPanel';
 
 const CAMERA_BUTTON_IDS: Record<CameraMode, string> = {
   orbit: 'btnOrbit',
@@ -35,6 +38,8 @@ const CAMERA_BUTTON_IDS: Record<CameraMode, string> = {
 const OBSERVATION_PERSIST_INTERVAL_MS = 2000;
 /** How often the real weather provider is polled — Open-Meteo's own data doesn't change faster than this and the WeatherService caches beneath it anyway. */
 const WEATHER_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+/** How often sensor health is recomputed from recent observations — health doesn't need per-frame granularity. */
+const SENSOR_HEALTH_REFRESH_INTERVAL_MS = 5000;
 
 /** Wires the scene, simulation, domain/persistence, geospatial, and weather layers together; owns the render loop. */
 export class App {
@@ -49,6 +54,7 @@ export class App {
   private readonly worldPanel = new WorldPanel();
   private readonly dataInspector = new DataInspector();
   private readonly weatherPanel = new WeatherPanel();
+  private readonly analysisRegistryPanel = new AnalysisRegistryPanel();
   private readonly observationLog = new ObservationLog();
   private readonly minimap = new Minimap(
     document.getElementById('minimapCanvas') as HTMLCanvasElement,
@@ -58,6 +64,7 @@ export class App {
   private geoView: GeoView | null = null;
   private geoViewOpen = false;
   private latestWeather: Awaited<ReturnType<WeatherService['getCurrentWeather']>> = null;
+  private readonly analysisEvaluations: AnalysisEvaluation[];
 
   private readonly clock = new THREE.Clock();
   private simSeconds = 0;
@@ -80,9 +87,14 @@ export class App {
     const farm = this.world.getFarm(this.worldIds.farmId);
     const field = this.world.getField(this.worldIds.fieldId);
     if (farm && field) {
-      this.worldPanel.render(farm, field, 'Simulation UAV-01', this.world.listSensors());
+      this.worldPanel.renderBreadcrumb(farm, field, 'Simulation UAV-01');
     }
     this.geoView = this.buildGeoView();
+
+    this.analysisEvaluations = evaluateAllAnalyses(this.world.listSensors().map((s) => s.kind));
+
+    this.refreshSensorHealth();
+    setInterval(() => this.refreshSensorHealth(), SENSOR_HEALTH_REFRESH_INTERVAL_MS);
 
     void this.refreshWeather();
     setInterval(() => void this.refreshWeather(), WEATHER_REFRESH_INTERVAL_MS);
@@ -163,6 +175,12 @@ export class App {
       setButtonActive('btnInspector', open);
     });
 
+    document.getElementById('btnAnalyses')?.addEventListener('click', () => {
+      const open = this.analysisRegistryPanel.toggle();
+      if (open) this.analysisRegistryPanel.render(this.analysisEvaluations);
+      setButtonActive('btnAnalyses', open);
+    });
+
     document.getElementById('btnGeoView')?.addEventListener('click', () => {
       this.geoViewOpen = !this.geoViewOpen;
       document.getElementById('geoView')?.classList.toggle('hidden', !this.geoViewOpen);
@@ -225,6 +243,15 @@ export class App {
       metadata: { note: 'DEMO_ONLY flat-earth approximation, not survey-grade' },
       ...this.observationContext
     });
+  }
+
+  private refreshSensorHealth(): void {
+    const farm = this.world.getFarm(this.worldIds.farmId);
+    const field = this.world.getField(this.worldIds.fieldId);
+    if (!farm || !field) return;
+    const sensors = this.world.listSensors();
+    const health = sensors.map((sensor) => evaluateSensorHealth(sensor, this.observationLog.recent(200)));
+    this.worldPanel.renderSensorHealth(sensors, health);
   }
 
   private async refreshWeather(): Promise<void> {

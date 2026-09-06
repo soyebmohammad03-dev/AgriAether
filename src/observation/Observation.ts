@@ -83,7 +83,32 @@ export interface Observation<T = number> {
   metadata?: Record<string, string | number | boolean> | null;
 }
 
-const SIMULATION_SOURCE_PREFIX = 'sim';
+/**
+ * Source-prefix -> disallowed-provenance rules (Phase 4, Part 29's
+ * scientific-honesty constraints made structural rather than just
+ * documented). Each entry says: a source matching this pattern can never
+ * claim one of these provenances, because doing so would misattribute
+ * where the value actually came from — a simulation source pretending to
+ * be a real instrument, an external API pretending to be a sensor, a model
+ * output pretending to be a direct reading.
+ */
+const SOURCE_PROVENANCE_RULES: Array<{ matches: (source: string) => boolean; disallowed: Provenance[]; description: string }> = [
+  {
+    matches: (s) => s.toLowerCase().startsWith('sim') || s === 'simulation-engine' || s.toLowerCase().startsWith('synthetic'),
+    disallowed: ['MEASURED', 'EXTERNAL', 'USER_REPORTED'],
+    description: 'a simulated or synthetic source can never be MEASURED, EXTERNAL, or USER_REPORTED'
+  },
+  {
+    matches: (s) => s.startsWith('external:'),
+    disallowed: ['MEASURED', 'SIMULATED', 'USER_REPORTED'],
+    description: 'an external-provider source can never be MEASURED, SIMULATED, or USER_REPORTED'
+  },
+  {
+    matches: (s) => s.startsWith('model:'),
+    disallowed: ['MEASURED', 'SIMULATED', 'EXTERNAL', 'USER_REPORTED'],
+    description: 'a model source can never be MEASURED, SIMULATED, EXTERNAL, or USER_REPORTED — a prediction is not a measurement'
+  }
+];
 
 /**
  * Domain invariants enforced on every Observation, regardless of how it was
@@ -106,12 +131,12 @@ export function assertValidObservation(obs: Observation<unknown>): void {
   if (obs.confidence !== null && (obs.confidence < 0 || obs.confidence > 1)) {
     throw new Error(`Observation "${obs.type}" has an out-of-range confidence: ${obs.confidence}`);
   }
-  const fromSimulation = obs.source.toLowerCase().startsWith(SIMULATION_SOURCE_PREFIX) ||
-    obs.source === 'simulation-engine';
-  if (fromSimulation && (obs.provenance === 'MEASURED' || obs.provenance === 'EXTERNAL' || obs.provenance === 'USER_REPORTED')) {
-    throw new Error(
-      `Observation "${obs.type}" comes from a simulation source ("${obs.source}") but claims provenance "${obs.provenance}" — a simulated source can never be MEASURED, EXTERNAL, or USER_REPORTED.`
-    );
+  for (const rule of SOURCE_PROVENANCE_RULES) {
+    if (rule.matches(obs.source) && rule.disallowed.includes(obs.provenance)) {
+      throw new Error(
+        `Observation "${obs.type}" comes from source "${obs.source}" but claims provenance "${obs.provenance}" — ${rule.description}.`
+      );
+    }
   }
 }
 
@@ -190,6 +215,47 @@ export function createEstimatedObservation<T>(
     missionId: params.missionId ?? null,
     droneId: params.droneId ?? null,
     metadata: params.metadata ?? null
+  };
+  assertValidObservation(obs);
+  return obs;
+}
+
+/**
+ * Build a PREDICTED observation — the output of an ML model, never a
+ * measurement. `source` must identify the model as `model:<modelId>` (see
+ * sensing/ModelRegistry.ts) so assertValidObservation's source-based rules
+ * apply; `metadata` should carry the model version.
+ */
+export function createPredictedObservation<T>(
+  params: {
+    type: string;
+    value: T;
+    unit: string | null;
+    timestamp: number;
+    location?: ObservationLocation | null;
+    modelId: string;
+    modelVersion: string;
+    confidence?: number | null;
+  } & ObservationContext
+): Observation<T> {
+  const obs: Observation<T> = {
+    id: createId(`obs_${params.type}`),
+    type: params.type,
+    value: params.value,
+    unit: params.unit,
+    timestamp: params.timestamp,
+    location: params.location ?? null,
+    source: `model:${params.modelId}`,
+    provenance: 'PREDICTED',
+    confidence: params.confidence ?? null,
+    status: 'OK',
+    farmId: params.farmId ?? null,
+    fieldId: params.fieldId ?? null,
+    zoneId: params.zoneId ?? null,
+    sensorId: params.sensorId ?? null,
+    missionId: params.missionId ?? null,
+    droneId: params.droneId ?? null,
+    metadata: { ...(params.metadata ?? {}), modelVersion: params.modelVersion }
   };
   assertValidObservation(obs);
   return obs;

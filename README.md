@@ -4,8 +4,11 @@ AgriAether is an early-stage, open-source foundation for an agricultural
 intelligence, simulation, digital-twin, and autonomous field-operations
 platform. This repository is not yet that platform — it is currently a
 **simulation core with a Farm/Field/Zone/Sensor domain model, a demo
-geospatial layer, and one real external data source (weather)**, and
-nothing more.
+geospatial layer, one real external data source (weather), and an
+agricultural sensing/analytics architecture that currently reports every
+remote-sensing analysis as honestly unsupported** (no camera or soil
+sensor exists yet — see "Remote sensing & agricultural analytics" below),
+and nothing more.
 
 ## Project status (be skeptical of anything that sounds bigger than this)
 
@@ -63,12 +66,31 @@ nothing more.
   including a DEMO_ONLY field/zone boundary anchored at Null Island
   (0°N 0°E — the GIS convention for "not a real place"), is seeded once and
   reused on reload.
-- Two developer-facing panels: the **Observation Inspector** (the
+- Three developer-facing panels: the **Observation Inspector** (the
   "Inspector" button) listing recent Observations with every field — type,
   value, unit, source, provenance, confidence, and Farm/Field/Zone/Sensor/
-  Mission/Drone linkage — and the **Geospatial View** (the "Geo View"
-  button), a small canvas plot of the demo field/zone boundaries and the
-  drone's demo-geodetic position, explicitly labeled DEMO_ONLY.
+  Mission/Drone linkage; the **Geospatial View** (the "Geo View" button), a
+  small canvas plot of the demo field/zone boundaries and the drone's
+  demo-geodetic position, explicitly labeled DEMO_ONLY; and the
+  **Agricultural Analysis Registry** (the "Analyses" button), which lists
+  every analysis this codebase knows how to define (five vegetation
+  indices, one thermal feature, temporal change, zone aggregation) and its
+  real support status against the sensors actually deployed — today that
+  means every vegetation index and the thermal feature show `UNSUPPORTED`,
+  truthfully, because no multispectral or thermal sensor exists yet.
+- A **remote-sensing and agricultural-analytics architecture** (`src/sensing/`,
+  `src/soil/`) built specifically so it cannot fabricate a result: a
+  `SpectralIndex`/`IndexEngine` that computes NDVI/GNDVI/NDRE/SAVI/EVI only
+  when the exact required bands are present as *calibrated reflectance* —
+  RGB-only or raw-radiance input always returns `INSUFFICIENT_DATA` or
+  `UNSUPPORTED`, never a number; a `SoilSample` model with the same
+  measurement-method-implies-provenance enforcement soil-side; an
+  `AnalysisRegistry` and `ModelRegistry` (four planned ML models, all
+  `NOT_DEPLOYED` — no labeled dataset exists in this repository); a
+  `TemporalChange`/`SpatialAggregation` foundation that makes no causal
+  claims; a `SensorFusion` inventory that reports what's available without
+  ever combining it into a health score; and a seeded, deterministic
+  `SyntheticDatasetGenerator` used only by tests, never by the live app.
 
 **Explicitly NOT implemented — do not assume otherwise:**
 - No real hardware, no real sensors, no real GNSS fix. Every geodetic
@@ -80,12 +102,25 @@ nothing more.
   mistakes it for a real place; a real projected/CRS pipeline for genuine
   survey data is future work.
 - No agricultural intelligence: no NDVI, soil moisture, pest detection, or
-  canopy temperature. The UI's "Data Layers" panel says so explicitly rather
-  than showing a number — those quantities require ground probes,
-  multispectral/thermal sensors, or trained CV models that do not exist in
-  this codebase yet.
+  canopy temperature. The UI's "Data Layers" and "Analyses" panels say so
+  explicitly rather than showing a number — those quantities require ground
+  probes, multispectral/thermal sensors, or trained CV models that do not
+  exist in this codebase yet.
+- No camera, thermal, or soil sensor of any kind is deployed — the demo
+  drone only carries GPS/IMU/barometer/battery, same as Phase 1–3. Every
+  Phase 4 remote-sensing type (`RgbImageObservation`, `MultispectralReading`,
+  `ThermalReading`, `SoilSample`) exists as architecture only, exercised by
+  tests and the deterministic synthetic generator — never by a live sensor.
+- No ML model is deployed. `ModelRegistry.PLANNED_MODELS` lists four
+  (crop segmentation, crop stress, disease classification, yield
+  estimation), every one `NOT_DEPLOYED` with its missing-dataset
+  requirement documented — none produces a prediction.
+- No spatial raster/grid engine — evaluated and deferred; see "What we
+  deliberately did not build," below.
 - No map basemap/tiles — see "Map/geospatial visualization" below for why.
-- No ML, no AI-generated recommendations, no autonomous mission planning.
+- No AI-generated recommendations, no autonomous mission planning, no
+  causal claims from temporal change detection (it reports
+  INCREASED/DECREASED/STABLE, never "why").
 - No autonomy beyond a fixed, pre-authored survey-loop mission; its
   waypoints carry a `geoPosition` field for a future real/demo-anchored
   mission, left `null` today rather than guessed.
@@ -189,6 +224,139 @@ forecast/historical data over plain HTTPS JSON — the key point being no
 secret to leak. `.env.example` documents the pattern for a future provider
 that *does* need a key, and says explicitly why one can't be used here yet.
 
+## Remote sensing & agricultural analytics
+
+```
+                    SENSOR LAYER (taxonomy: sensing/SensorCapabilityCatalog.ts)
+                         │
+          ┌──────────────┼──────────────┬─────────────────┐
+          ↓              ↓              ↓                 ↓
+  RgbImageObservation  MultispectralReading  ThermalReading  SoilSample
+   (sensing/)             (sensing/)          (sensing/)      (soil/)
+          │              │              │                 │
+          └──────────────┼──────────────┴─────────────────┘
+                         ↓
+              Observation[] / typed reading (provenance always
+              MEASURED/SIMULATED/EXTERNAL as the source dictates,
+              never invented — see assertValidObservation's
+              source-prefix rules)
+                         │
+                    FEATURE ENGINE
+              ┌──────────┴──────────┐
+              ↓                     ↓
+   IndexEngine.calculateIndex   ThermalReading feature fns
+   (band-gated: OK / UNSUPPORTED   (documented, deterministic —
+   / INSUFFICIENT_DATA — never     e.g. canopy-minus-air
+   a fabricated index value)       temperature difference)
+              │                     │
+              └──────────┬──────────┘
+                         ↓
+              AgriculturalAnalysis  (never provenance MEASURED —
+                         │           an analysis is derived by definition)
+                    DATA LINEAGE  (sensing/Lineage.ts: Analysis ->
+                         │         input Observations -> source Sensors)
+                    AnalysisRegistry.evaluateAnalysis()
+                         │         (gates every analysis on the sensor
+                         │          kinds actually deployed)
+                    USER / FARMER  (the "Analyses" panel — shows
+                                    UNSUPPORTED with the real reason
+                                    instead of a fake number)
+```
+
+**Vegetation indices** (`src/sensing/SpectralIndex.ts`, `IndexEngine.ts`):
+NDVI, GNDVI, NDRE, SAVI, EVI, each with its published formula, required
+bands, numeric range, and documented assumptions/limitations as data, not
+comments. `calculateIndex` is the only place one is computed, and it always
+returns a `status` (`OK | UNSUPPORTED | INSUFFICIENT_DATA`) alongside any
+value — an uncalibrated-radiance `MultispectralReading` is `UNSUPPORTED`;
+a reading missing a required band (e.g. RGB imagery lacking NIR) is
+`INSUFFICIENT_DATA`; nothing here ever substitutes a nearby band or guesses.
+
+**Thermal** (`ThermalReading.ts`) keeps three things explicitly separate: a
+`ThermalReading` is a measured temperature; a `ThermalFeature` is a named,
+deterministic computation over readings (e.g. canopy − air difference);
+neither is an agricultural interpretation ("water stress") — that would
+require a validated model this repository does not have.
+
+**Soil** (`src/soil/`): `SoilSample.method` (`FIELD_SAMPLING | ZONE_SAMPLING
+| LABORATORY | GROUND_SENSOR | EXTERNAL_DATASET | SIMULATION`) determines
+its `provenance` — the two can never disagree, enforced at construction.
+`assertSoilSampleSensorCapable` (reusing `sensors/Sensor.ts`'s capability
+guard) rejects a `GROUND_SENSOR` sample if the referenced sensor doesn't
+declare every measurement present — the same mechanism that keeps
+"RGB camera → soil NPK" impossible also keeps "pH probe → soil moisture"
+impossible. `soilSampleToObservations.ts` explodes a sample into the same
+canonical `Observation` records everything else uses, mirroring
+`weatherObservationToObservations.ts`.
+
+**Data quality vs. provenance** (`sensing/DataQuality.ts`): deliberately a
+second, orthogonal axis — `VALID | QUESTIONABLE | INVALID | MISSING |
+STALE | INSUFFICIENT_DATA | UNSUPPORTED | CALIBRATION_REQUIRED`. "EXTERNAL
++ STALE" and "SIMULATED + VALID" are both coherent; the two dimensions are
+never merged into one flag.
+
+**Calibration & sensor health**: `SensorRecord.calibration` now carries
+source/version/validity/notes, not just a status enum
+(`domain/SensorRecord.ts`). `sensing/SensorHealth.ts` derives
+`ONLINE | OFFLINE | DEGRADED | CALIBRATION_REQUIRED | UNKNOWN` from real
+signals already in the codebase (registry status, calibration state,
+observation recency/validity) — never fabricated hardware telemetry — and
+always carries `isSimulated` alongside the status so a simulated sensor's
+"ONLINE" is never shown without its "(SIMULATED)" qualifier (see the
+breadcrumb under the logo).
+
+**Model registry** (`sensing/ModelRegistry.ts`): a data-only contract for
+future ML models — id, task, input/output shape, training dataset
+reference, evaluation metrics, deployment status, limitations.
+`assertModelRecordValid` refuses to let a model claim `DEPLOYED` without
+both evaluation metrics and a training dataset reference. `PLANNED_MODELS`
+registers four (crop segmentation, crop stress, disease classification,
+yield estimation), each `NOT_DEPLOYED` with its missing-dataset requirement
+spelled out — per the Phase 4 brief's explicit instruction not to train or
+fake a model with no real dataset.
+
+**Prediction vs. measurement**: `createPredictedObservation`
+(`observation/Observation.ts`) always sets `provenance: 'PREDICTED'` and
+`source: 'model:<modelId>'`; `assertValidObservation`'s source-prefix rules
+reject a `model:*` source ever claiming `MEASURED`, `SIMULATED`, or
+`EXTERNAL` — a prediction can never be presented as a direct reading. The
+same rule set also rejects an `external:*` source claiming `SIMULATED`
+(weather cannot become simulated telemetry) and a `sim*`/`synthetic*`
+source claiming `MEASURED`/`EXTERNAL` (simulated or synthetic data cannot
+be promoted to real).
+
+**Temporal change & spatial aggregation** (`TemporalChange.ts`,
+`SpatialAggregation.ts`): `compareObservations` only compares
+same-type/same-field/same-zone pairs with real values, returns
+`INCREASED | DECREASED | STABLE | INSUFFICIENT_DATA` from a documented
+relative threshold, and makes no claim about *why* — no weather/irrigation
+causal attribution exists. `aggregateObservations` computes mean/min/max/
+count over same-type observations and returns a distinctly-shaped
+`AggregationResult` (never conflated with a raw `Observation`), always
+naming its `sourceObservationIds`.
+
+**Sensor fusion foundation** (`SensorFusion.ts`): `buildFusionInventory`
+reports what observation types, time range, location frames, and
+confidence are available to combine — it never computes an "overall crop
+health" score. That conversion is exactly the job a future validated model
+in the model registry would do.
+
+**Synthetic dataset generator** (`sensing/synthetic/SyntheticDatasetGenerator.ts`):
+a seeded PRNG (mulberry32) generating deterministic multispectral/thermal
+readings, always `provenance: 'SIMULATED'`, for exercising the IndexEngine/
+TemporalChange/SpatialAggregation pipelines in tests. It is never imported
+by `app/App.ts` — the live application shows real `UNSUPPORTED` statuses,
+not synthetic numbers dressed up as a demo.
+
+**What we deliberately did not build**: a spatial grid/raster abstraction
+(Part 22 of the brief) — evaluated and skipped because nothing in this
+repository produces raster/pixel data yet; a full image-processing/upload
+pipeline — no real camera source exists to ingest from, so `ImageAsset` is
+a reference type only (`storage: 'local' | 'object-store'`), never
+wired to actual bytes; and a "crop condition" or "disease" status any
+analysis can return — `AgriculturalAnalysisType` deliberately excludes
+both.
+
 ## Security
 
 Vite bundles any `VITE_`-prefixed environment variable straight into the
@@ -275,13 +443,22 @@ src/
   weather/      WeatherObservation, WeatherProvider (+ OpenMeteoProvider,
                 MockWeatherProvider), normalization/validation,
                 WeatherService (cache + staleness)
+  soil/         SoilSample (method-implies-provenance), 
+                soilSampleToObservations (+ sensor-capability guard)
+  sensing/      Remote-sensing taxonomy, SpectralIndex/IndexEngine,
+                ThermalReading/features, AgriculturalAnalysis,
+                AnalysisRegistry, ModelRegistry, TemporalChange,
+                SpatialAggregation, SensorFusion, SensorHealth, Lineage,
+                DataQuality, ImageAsset — the Phase 4 sensing/analytics
+                architecture; synthetic/ holds the seeded test-only
+                dataset generator
   world/        WorldRegistry (referential-integrity index + lookups),
                 demoWorld.ts (the one seeded fixture)
   persistence/  Repository<T> interface, InMemoryRepository,
                 IndexedDbRepository, repositories.ts factory
   ui/           Hud, Minimap, WorldPanel, DataInspector, GeoView,
-                WeatherPanel — render domain state/Observations, compute
-                nothing
+                WeatherPanel, AnalysisRegistryPanel — render domain
+                state/Observations, compute nothing
 ```
 
 Data flow, and the boundary that must never be crossed:
@@ -313,16 +490,24 @@ pipeline without the UI changing at all.
 1. ~~Solid simulation core~~ — Phase 1.
 2. ~~Field + sensor model~~ — Phase 2: Farm/Field/Zone entity graph, sensor
    registry + capability model, first persistence layer.
-3. ~~Real data pipeline + geospatial base~~ — this repository, Phase 3:
-   coordinate/CRS model, DEMO_ONLY field/zone geometry, a real external
-   weather source with caching and honest degradation.
-4. Crop/soil analytics + richer digital twin — first scoped ML model,
-   behind a model registry, with stated confidence; a real (non-Null-Island)
+3. ~~Real data pipeline + geospatial base~~ — Phase 3: coordinate/CRS model,
+   DEMO_ONLY field/zone geometry, a real external weather source with
+   caching and honest degradation.
+4. ~~Remote sensing + agricultural analytics foundation~~ — this repository,
+   Phase 4: spectral-index engine gated on real band availability, soil
+   sampling with method-implies-provenance, analysis/model registries (no
+   model deployed — no labeled dataset exists), temporal change/spatial
+   aggregation foundations, sensor fusion inventory, data lineage tracing.
+5. First real ML model — once a genuine labeled dataset exists (real or
+   high-fidelity simulated imagery with verified labels), train and
+   register it against `ModelRegistry`'s contract; a real (non-Null-Island)
    field boundary and CRS pipeline if real field data becomes available.
-5. Autonomous missions + AI decision engine — coverage planning, temporal
-   comparison across flights, sensor fusion with preserved uncertainty.
-6. Real hardware + community platform — first real flight-controller/sensor
-   integration behind the `Sensor`/drone abstractions proven here; open
-   datasets and plugin contributions.
+6. Autonomous missions + AI decision engine — coverage planning, temporal
+   comparison across flights, sensor fusion converted into a validated
+   prediction with preserved uncertainty.
+7. Real hardware + community platform — first real flight-controller/sensor
+   (including camera/multispectral/thermal/soil) integration behind the
+   `Sensor`/drone abstractions proven here; open datasets and plugin
+   contributions.
 
-Phase 4 is not started and requires separate approval before work begins.
+Phase 5 is not started and requires separate approval before work begins.

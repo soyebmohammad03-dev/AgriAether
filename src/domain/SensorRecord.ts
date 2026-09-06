@@ -4,10 +4,27 @@ import type { Sensor, SensorPlatform } from '../sensors/Sensor';
 export type SensorKind =
   | 'gps' | 'imu' | 'barometer' | 'battery' // drone, implemented as of Phase 1/2
   | 'rgb-camera' | 'multispectral-camera' | 'thermal-camera' | 'lidar' // drone, not yet implemented
-  | 'soil-moisture' | 'soil-temperature' | 'soil-ec' | 'soil-ph' // ground, not yet implemented
+  | 'soil-moisture' | 'soil-temperature' | 'soil-ec' | 'soil-ph' | 'soil-npk' // ground, not yet implemented
   | 'weather-station' | 'rain-gauge' | 'anemometer' | 'air-temperature' | 'humidity'; // fixed-station, not yet implemented
 
 export type CalibrationStatus = 'CALIBRATED' | 'UNCALIBRATED' | 'UNKNOWN';
+
+/**
+ * Calibration metadata (Phase 4). This does not implement any calibration
+ * algorithm — it exists so the rest of the system can refuse to treat an
+ * uncalibrated or overdue sensor as fully trustworthy (see
+ * sensing/SensorHealth.ts and sensing/DataQuality.ts).
+ */
+export interface Calibration {
+  status: CalibrationStatus;
+  calibratedAt: number | null;
+  /** Who/what calibrated it — e.g. "factory", "manual:2025-01-03", null if unknown. */
+  source: string | null;
+  version: string | null;
+  /** Days after calibratedAt this calibration should be trusted; null if not documented. */
+  validityDays: number | null;
+  notes: string | null;
+}
 
 /**
  * The persisted registry record for a sensor — distinct from the runtime
@@ -28,9 +45,17 @@ export interface SensorRecord {
   capabilities: readonly string[];
   isSimulated: boolean;
   status: 'ACTIVE' | 'INACTIVE';
-  calibration: {
-    status: CalibrationStatus;
-    calibratedAt: number | null;
+  calibration: Calibration;
+}
+
+function defaultCalibration(isSimulated: boolean): Calibration {
+  return {
+    status: isSimulated ? 'CALIBRATED' : 'UNKNOWN',
+    calibratedAt: isSimulated ? Date.now() : null,
+    source: isSimulated ? 'simulation' : null,
+    version: null,
+    validityDays: null,
+    notes: null
   };
 }
 
@@ -42,7 +67,7 @@ export function createSensorRecord(params: {
   capabilities: readonly string[];
   isSimulated: boolean;
   status?: 'ACTIVE' | 'INACTIVE';
-  calibration?: { status: CalibrationStatus; calibratedAt: number | null };
+  calibration?: Partial<Calibration>;
 }): SensorRecord {
   if (params.capabilities.length === 0) {
     throw new Error(`SensorRecord "${params.name}" must declare at least one capability`);
@@ -56,7 +81,7 @@ export function createSensorRecord(params: {
     capabilities: params.capabilities,
     isSimulated: params.isSimulated,
     status: params.status ?? 'ACTIVE',
-    calibration: params.calibration ?? { status: params.isSimulated ? 'CALIBRATED' : 'UNKNOWN', calibratedAt: params.isSimulated ? Date.now() : null }
+    calibration: { ...defaultCalibration(params.isSimulated), ...params.calibration }
   };
 }
 
@@ -83,6 +108,6 @@ export function createSensorRecordFromSensor(sensor: Sensor<unknown>): SensorRec
     capabilities: sensor.capabilities,
     isSimulated: sensor.isSimulated,
     status: 'ACTIVE',
-    calibration: { status: sensor.isSimulated ? 'CALIBRATED' : 'UNKNOWN', calibratedAt: sensor.isSimulated ? Date.now() : null }
+    calibration: defaultCalibration(sensor.isSimulated)
   };
 }
