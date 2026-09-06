@@ -3,6 +3,7 @@ import turfDistance from '@turf/distance';
 import turfBooleanPointInPolygon from '@turf/boolean-point-in-polygon';
 import turfBbox from '@turf/bbox';
 import turfArea from '@turf/area';
+import turfKinks from '@turf/kinks';
 import type { Polygon, MultiPolygon } from 'geojson';
 
 /**
@@ -42,6 +43,12 @@ export function boundingBox(geometry: Polygon | MultiPolygon): [number, number, 
 /** Area of a polygon/multipolygon in hectares (Turf returns m²; 1 ha = 10,000 m²). */
 export function areaHectares(geometry: Polygon | MultiPolygon): number {
   return turfArea(geometry) / 10_000;
+}
+
+/** Self-intersection points of a polygon's rings, or [] if none. A basic, practical check (Turf's line-based kinks algorithm), not a full topology validator. */
+export function findSelfIntersections(polygon: Polygon): Array<[number, number]> {
+  const result = turfKinks(turfPolygon(polygon.coordinates));
+  return result.features.map((f) => f.geometry.coordinates as [number, number]);
 }
 
 /** A ring must have at least 4 positions and be closed (first === last) — GeoJSON's own requirement, checked explicitly rather than trusting the caller. */

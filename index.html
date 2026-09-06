@@ -242,6 +242,10 @@
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M8 4v16"/></svg>
                 <span>Inspector</span>
             </button>
+            <button class="ctrl-btn" id="btnDataCatalog" title="Toggle the data catalog — field summary, coverage, data gaps, mission requirements, and registered datasets">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                <span>Data Catalog</span>
+            </button>
             <button class="ctrl-btn" id="btnReset" title="Reset View">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
                 <span>Reset</span>
@@ -289,6 +293,15 @@
         </div>
         <canvas id="geoViewCanvas" width="240" height="240"></canvas>
         <div class="geoview-note">Field/zone boundaries and drone position are DEMO_ONLY geometry anchored at Null Island (0°N 0°E) — not a real place. Yellow crosshair: external weather observation point.</div>
+    </div>
+
+    <!-- Data Catalog (closed by default) -->
+    <div id="dataCatalogPanel" class="hidden">
+        <div class="inspector-header">
+            <span>DATA CATALOG — MISSION CONTROL</span>
+            <span class="panel-status deferred">FIELD 01</span>
+        </div>
+        <div id="dataCatalogContent"></div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

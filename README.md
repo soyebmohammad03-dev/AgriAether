@@ -4,11 +4,13 @@ AgriAether is an early-stage, open-source foundation for an agricultural
 intelligence, simulation, digital-twin, and autonomous field-operations
 platform. This repository is not yet that platform — it is currently a
 **simulation core with a Farm/Field/Zone/Sensor domain model, a demo
-geospatial layer, one real external data source (weather), and an
-agricultural sensing/analytics architecture that currently reports every
-remote-sensing analysis as honestly unsupported** (no camera or soil
-sensor exists yet — see "Remote sensing & agricultural analytics" below),
-and nothing more.
+geospatial layer, one real external data source (weather), an agricultural
+sensing/analytics architecture that currently reports every remote-sensing
+analysis as honestly unsupported** (no camera or soil sensor exists yet —
+see "Remote sensing & agricultural analytics" below), **and a real
+GeoJSON/raster ingestion pipeline exercised end-to-end by a deterministic
+fixture** (see "Real agricultural data pipeline" below) — no live external
+dataset provider is wired up, by design.
 
 ## Project status (be skeptical of anything that sounds bigger than this)
 
@@ -91,6 +93,19 @@ and nothing more.
   claims; a `SensorFusion` inventory that reports what's available without
   ever combining it into a health score; and a seeded, deterministic
   `SyntheticDatasetGenerator` used only by tests, never by the live app.
+- A **real agricultural data pipeline** (`src/data/`): a `DatasetRecord`
+  registry every derived artifact can be traced back to; `ingestFieldBoundaryGeoJson`
+  validating (and, only when recoverable, repairing-with-a-record) real
+  GeoJSON field/zone boundaries — the demo world's own Field 01 boundary
+  now runs through this exact function rather than being used raw; a
+  lightweight `RasterGrid`/`RasterMetadata` model with explicit nodata
+  handling and field/zone clipping that never mutates the source raster;
+  real spatial statistics that flag low-coverage results `QUESTIONABLE`
+  instead of showing them with false confidence; `checkTemporalCompatibility`,
+  which refuses to compare incompatible rasters; and a **Data Catalog**
+  panel (the "Data Catalog" button) showing a real Field Summary, Coverage,
+  Data Gaps, Mission Data Requirements, and the dataset registry — no
+  fabricated health score, no invented coverage percentage.
 
 **Explicitly NOT implemented — do not assume otherwise:**
 - No real hardware, no real sensors, no real GNSS fix. Every geodetic
@@ -115,8 +130,18 @@ and nothing more.
   (crop segmentation, crop stress, disease classification, yield
   estimation), every one `NOT_DEPLOYED` with its missing-dataset
   requirement documented — none produces a prediction.
-- No spatial raster/grid engine — evaluated and deferred; see "What we
-  deliberately did not build," below.
+- No live external dataset provider (satellite/imagery catalog, etc.) —
+  `DatasetProvider` is an interface only; the sole implementation ingests a
+  local, deterministic fixture. No random imagery was downloaded and
+  relabeled as belonging to a real farm.
+- No real (non-fixture) raster — `RasterGrid`/`RasterMetadata` exist and are
+  exercised end-to-end by `fixtures/AgriculturalRasterFixture.ts`, never by
+  live drone or satellite imagery.
+- No spatial grid/tiling engine beyond the minimum row/col window addressing
+  `Raster.ts` needs for its own fixture-scale tests — evaluated and
+  deferred; see "What we deliberately did not build," below.
+- No file upload UI — `AssetSecurity.validateUploadCandidate` exists as a
+  tested contract for when one is built, not a working feature today.
 - No map basemap/tiles — see "Map/geospatial visualization" below for why.
 - No AI-generated recommendations, no autonomous mission planning, no
   causal claims from temporal change detection (it reports
@@ -357,6 +382,159 @@ wired to actual bytes; and a "crop condition" or "disease" status any
 analysis can return — `AgriculturalAnalysisType` deliberately excludes
 both.
 
+## Real agricultural data pipeline
+
+```
+                 DATA SOURCES
+                      │
+       ┌──────────────┼──────────────┐
+       ↓              ↓              ↓
+    IMAGERY        SENSORS        WEATHER
+   (fixture)   (sim GPS/IMU/     (Open-Meteo,
+                baro/battery)     Phase 3)
+       │              │              │
+       └──────────────┼──────────────┘
+                      ↓
+                  INGESTION           DatasetProvider.fetch() → ImportJob
+                      ↓               (PENDING→VALIDATING→INGESTING→
+              VALIDATION + QC          PROCESSING→COMPLETED/FAILED,
+                      ↓                 never fake progress)
+             GEO / CRS NORMALIZE      ingestFieldBoundaryGeoJson()
+                      ↓               (repairs recorded, never silent;
+          ┌───────────┴───────────┐    invalid geometry ⇒ geometry: null)
+          ↓                       ↓
+       VECTOR                   RASTER
+     FIELD/ZONES              IMAGERY/GRID        RasterGrid + nodata +
+          │                       │                clipRasterToGeometry
+          └───────────┬───────────┘                (never mutates source)
+                      ↓
+              FIELD DATA MODEL                     FieldSummary,
+                      ↓                             computeFieldCoverage
+              FEATURE / ANALYSIS                   computeSpatialStatistics
+                      ↓                             (QUESTIONABLE below
+             TEMPORAL INTELLIGENCE                  30% coverage),
+                      ↓                             checkTemporalCompatibility
+                DATA GAPS                          detectDataGaps()
+                      ↓
+             FUTURE MISSION PLAN                   evaluateMissionDataRequirements()
+                      ↓                             (MISSION_REQUIRED, not
+               FUTURE ML / AI                        an actual flight)
+```
+
+**Dataset registry** (`data/Dataset.ts`): every dataset — vector, raster,
+tabular, imagery, sensor series, weather — gets one `DatasetRecord`:
+provider, source, type, acquisition range, spatial extent, CRS, resolution,
+bands, license/attribution, provenance, quality. A `RASTER`/`IMAGERY`
+dataset is required to declare a CRS at construction — `createDatasetRecord`
+throws otherwise, rather than letting a later step silently assume WGS84.
+The demo world registers exactly one dataset today: Field 01's own
+boundary, ingested through the real pipeline below (see `world/demoWorld.ts`).
+
+**GeoJSON field boundaries** (`data/GeoJsonIngestion.ts`): validates ring
+closure, coordinate bounds, minimum point count, and self-intersection
+(via `@turf/kinks`) before accepting a Polygon/MultiPolygon. An unclosed
+ring that's otherwise valid is repaired by closing it — and the result
+comes back `status: 'REPAIRED'` with `repairMethod: 'CLOSED_RING'` and the
+original geometry preserved alongside the repaired one; nothing is fixed
+silently. Anything unrecoverable (self-intersecting, out-of-range
+coordinates, too few points) comes back `status: 'INVALID'` with
+`geometry: null` — never used downstream. The demo Field 01/Zone A/Zone B
+boundaries are still `DEMO_ONLY` Null Island fixtures (see "Geospatial
+architecture" above) — Phase 5 changed *how* they're validated, not *what*
+they claim to be.
+
+**CRS**: `data/CrsTransform.ts` names three roles a CRS can play — SOURCE,
+DISPLAY, ANALYSIS — that this codebase currently collapses onto one value,
+`EPSG:4326`, with area/distance computed spherically via Turf rather than
+through a projection (documented in "Geospatial architecture," above). The
+seam exists so adding a projected ANALYSIS CRS later touches one place.
+
+**Raster model** (`data/Raster.ts`): `RasterMetadata` (dimensions, extent,
+CRS, per-band metadata, an explicit `nodataValue` that is never assumed to
+be `0` or `-9999`, dtype, acquisition time, source) is kept separate from
+`RasterGrid`, which holds the actual per-band `Float64Array` pixel data —
+Part 13 of the brief's "don't create a relational row per pixel," honored
+by never putting pixel arrays anywhere near the entity/repository layer.
+`RasterGrid.getCell` returns `null` for nodata or out-of-range — never the
+raw sentinel value. `readWindow` is the minimum row/col addressing this
+phase needs; there is no tiling/paging engine, because nothing in this
+codebase yet needs one (see "What we deliberately did not build").
+
+**Field/zone clipping** (`data/FieldClip.ts`): `clipRasterToGeometry`
+point-tests every cell's center against a field or zone polygon (reusing
+`geo/geometry.ts`'s point-in-polygon) and returns a `FieldRasterSubset` —
+cell indices plus a `ProcessingStep` recording the operation and algorithm
+version — without ever copying or mutating the source `RasterGrid`.
+`readClippedBandValues` then reads the untouched source on demand.
+
+**Spatial statistics** (`data/SpatialStatistics.ts`): mean/median/min/max/
+stddev over valid (non-nodata) cells only, always returning `sampleCount`,
+`totalCellCount`, and `coverageFraction` alongside the value — a statistic
+computed over less than 30% of candidate cells comes back `quality:
+'QUESTIONABLE'`, not presented with the same confidence as a fully-covered
+one (the brief's own example: a mean over 3 of 300,000 pixels).
+
+**Temporal compatibility** (`data/TemporalAlignment.ts`): before any
+raster-level comparison, `checkTemporalCompatibility` checks CRS match,
+shared band, extent overlap, and distinct timestamps — a mismatch returns
+`INCOMPATIBLE_DATA` (a real structural conflict) or `INSUFFICIENT_DATA`
+(missing information), and the caller must not proceed to compute a
+comparison. This sits alongside, not instead of, Phase 4's
+`sensing/TemporalChange.ts`, which compares individual `Observation`s;
+raster-level temporal work builds on both.
+
+**Coverage & data gaps** (`data/Coverage.ts`, `data/DataGap.ts`):
+`computeFieldCoverage` reports real sensor-category availability (rgb/
+multispectral/thermal/soil/weather), real observed time range, and real
+freshness — `spatialCoveragePercent` is `null`, not a fabricated number,
+whenever no raster has actually been clipped for that field (true for the
+live app today: the only registered dataset is a vector boundary, not
+imagery). `detectDataGaps` turns that into an explicit list (missing
+sensor, missing timestamps, stale observations, insufficient spatial
+coverage) — verified live: with only GPS/IMU/barometer/battery deployed,
+the Data Catalog panel correctly lists four `MISSING_SENSOR` gaps.
+
+**Mission data requirements** (`data/MissionDataRequirement.ts`): reframes
+every `UNSUPPORTED` entry from Phase 4's `AnalysisRegistry` as a
+`MISSION_REQUIRED` statement — "NDVI requires multispectral-camera, not
+currently deployed" — without planning or flying anything. Autonomous
+mission planning remains future work.
+
+**Field Summary** (`data/FieldSummary.ts`): assembles area, dataset count,
+recent observation count, latest acquisition, coverage, gaps, and which
+analyses are actually `SUPPORTED` — with an explicit `"No agricultural
+analysis available yet."` note when none are, never a generic health score.
+
+**Import jobs** (`data/ImportJob.ts`): `runImportJob` walks a dataset
+through `PENDING → VALIDATING → INGESTING → PROCESSING → COMPLETED/FAILED`
+synchronously — every transition reflects a real step that happened, not a
+fake progress bar. A provider failure ends the job `FAILED` with the real
+error and `recordsProcessed: 0`, never a partial/fake result.
+
+**Asset upload security** (`data/AssetSecurity.ts`): `validateUploadCandidate`
+sanitizes filenames (rejects `..`/path separators/null bytes), enforces a
+size ceiling, and checks the declared MIME type against an allowlist —
+never trusting a filename's extension alone. Written now, tested, and
+ready for the first real upload feature; no upload UI exists in this
+codebase yet.
+
+**Deterministic raster fixture** (`data/fixtures/AgriculturalRasterFixture.ts`):
+a 4×4, two-band (RED/NIR) grid with one known nodata cell and mathematically
+predictable values — never used by the live app, only by tests, which
+verify clipping/statistics/nodata handling/index calculation against known-
+correct answers (see `data/RasterIndexIntegration.test.ts` for the full
+raster → clip → statistics → `IndexEngine.calculateIndex` path).
+
+**What we deliberately did not build (Phase 5 additions)**: a live external
+dataset provider — network-based ingestion (satellite catalogs, public
+imagery APIs) is real future work, deferred rather than faked with a
+provider that silently falls back to fixture data; a tiling/paging raster
+engine — nothing in this codebase handles a raster larger than the small
+fixture scale yet; and a real (non-Null-Island) field boundary — obtaining
+one is a data-acquisition problem, not an architecture problem, and
+inventing a plausible-looking one would violate the project's own
+scientific-honesty rules.
+
 ## Security
 
 Vite bundles any `VITE_`-prefixed environment variable straight into the
@@ -381,8 +559,9 @@ contract the domain layer depends on — nothing in `domain/`, `world/`, or
   SQLite-via-WASM (real SQL and an easier future server migration, but a
   WASM asset and a heavier dependency for a need IndexedDB already meets).
   It's async (fine for a 60fps loop), structured, and works fully offline.
-  A `weatherCache` object store was added in Phase 3 (schema version 2) —
-  the migration only adds missing stores, never touches existing data.
+  A `weatherCache` object store was added in Phase 3 (schema version 2) and
+  a `datasets` store in Phase 5 (schema version 3) — each migration only
+  adds missing stores, verified live to never touch existing data.
 - **InMemoryRepository** — a trivial Map-backed implementation used in tests
   (no IndexedDB under Vitest's node environment) and as a fallback.
 
@@ -452,13 +631,19 @@ src/
                 DataQuality, ImageAsset — the Phase 4 sensing/analytics
                 architecture; synthetic/ holds the seeded test-only
                 dataset generator
+  data/         Phase 5: DatasetRecord registry, GeoJsonIngestion,
+                CrsTransform, Raster/RasterGrid, FieldClip,
+                SpatialStatistics, TemporalAlignment, Coverage, DataGap,
+                MissionDataRequirement, FieldSummary, ImportJob,
+                AssetSecurity, ProcessingStep (lineage); fixtures/ holds
+                the deterministic test-only raster fixture
   world/        WorldRegistry (referential-integrity index + lookups),
                 demoWorld.ts (the one seeded fixture)
   persistence/  Repository<T> interface, InMemoryRepository,
                 IndexedDbRepository, repositories.ts factory
   ui/           Hud, Minimap, WorldPanel, DataInspector, GeoView,
-                WeatherPanel, AnalysisRegistryPanel — render domain
-                state/Observations, compute nothing
+                WeatherPanel, AnalysisRegistryPanel, DataCatalogPanel —
+                render domain state/Observations, compute nothing
 ```
 
 Data flow, and the boundary that must never be crossed:
@@ -498,16 +683,25 @@ pipeline without the UI changing at all.
    sampling with method-implies-provenance, analysis/model registries (no
    model deployed — no labeled dataset exists), temporal change/spatial
    aggregation foundations, sensor fusion inventory, data lineage tracing.
-5. First real ML model — once a genuine labeled dataset exists (real or
-   high-fidelity simulated imagery with verified labels), train and
-   register it against `ModelRegistry`'s contract; a real (non-Null-Island)
-   field boundary and CRS pipeline if real field data becomes available.
-6. Autonomous missions + AI decision engine — coverage planning, temporal
+5. ~~Real agricultural data pipeline + raster intelligence~~ — this
+   repository, Phase 5: dataset registry, validated (and honestly-repaired)
+   GeoJSON ingestion, a lightweight raster/nodata/clipping model exercised
+   end-to-end by a deterministic fixture, spatial statistics with coverage-
+   aware quality, temporal-compatibility gating, coverage/data-gap/mission-
+   requirement reporting, and the Data Catalog panel — still no live
+   external dataset provider and no real (non-fixture) raster.
+6. First real ML model + first real external dataset — once a genuine
+   labeled dataset exists (real or high-fidelity simulated imagery with
+   verified labels) and/or a live `DatasetProvider` implementation is
+   added, train and register a model against `ModelRegistry`'s contract; a
+   real (non-Null-Island) field boundary and CRS pipeline if real field
+   data becomes available.
+7. Autonomous missions + AI decision engine — coverage planning, temporal
    comparison across flights, sensor fusion converted into a validated
    prediction with preserved uncertainty.
-7. Real hardware + community platform — first real flight-controller/sensor
+8. Real hardware + community platform — first real flight-controller/sensor
    (including camera/multispectral/thermal/soil) integration behind the
    `Sensor`/drone abstractions proven here; open datasets and plugin
    contributions.
 
-Phase 5 is not started and requires separate approval before work begins.
+Phase 6 is not started and requires separate approval before work begins.

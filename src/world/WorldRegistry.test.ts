@@ -8,6 +8,7 @@ import { createSensorRecord } from '../domain/SensorRecord';
 import { createSensorDeployment } from '../domain/SensorDeployment';
 import { createCropCycle } from '../domain/Crop';
 import { createAgriculturalEvent } from '../domain/AgriculturalEvent';
+import { createDatasetRecord } from '../data/Dataset';
 
 async function freshRegistry(): Promise<WorldRegistry> {
   return WorldRegistry.load(createInMemoryRepositories());
@@ -42,6 +43,20 @@ describe('WorldRegistry relationship invariants', () => {
   it('an agricultural event cannot reference a nonexistent field', async () => {
     const event = createAgriculturalEvent({ fieldId: 'field_does_not_exist', type: 'MISSION_STARTED', description: 'x', source: 'SIMULATED' });
     await expect(registry.recordEvent(event)).rejects.toThrow(/unknown field/);
+  });
+
+  it('a dataset cannot reference a nonexistent field', async () => {
+    const dataset = createDatasetRecord({
+      name: 'x',
+      provider: 'test',
+      source: 'test',
+      type: 'TABULAR',
+      acquiredAtStart: Date.now(),
+      provenance: 'SIMULATED',
+      quality: 'VALID',
+      fieldId: 'field_does_not_exist'
+    });
+    await expect(registry.registerDataset(dataset)).rejects.toThrow(/unknown field/);
   });
 
   it('accepts the full valid chain: farm -> field -> zone -> sensor -> deployment', async () => {

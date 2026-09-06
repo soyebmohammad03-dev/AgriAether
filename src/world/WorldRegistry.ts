@@ -5,6 +5,7 @@ import type { CropCycle } from '../domain/Crop';
 import type { SensorRecord } from '../domain/SensorRecord';
 import type { SensorDeployment } from '../domain/SensorDeployment';
 import type { AgriculturalEvent } from '../domain/AgriculturalEvent';
+import type { DatasetRecord } from '../data/Dataset';
 import type { AgriAetherRepositories } from '../persistence/repositories';
 
 /**
@@ -25,19 +26,21 @@ export class WorldRegistry {
   private readonly sensors = new Map<string, SensorRecord>();
   private readonly sensorDeployments = new Map<string, SensorDeployment>();
   private readonly agriculturalEvents = new Map<string, AgriculturalEvent>();
+  private readonly datasets = new Map<string, DatasetRecord>();
 
   private constructor(private readonly repositories: AgriAetherRepositories) {}
 
   static async load(repositories: AgriAetherRepositories): Promise<WorldRegistry> {
     const registry = new WorldRegistry(repositories);
-    const [farms, fields, zones, cropCycles, sensors, deployments, events] = await Promise.all([
+    const [farms, fields, zones, cropCycles, sensors, deployments, events, datasets] = await Promise.all([
       repositories.farms.list(),
       repositories.fields.list(),
       repositories.zones.list(),
       repositories.cropCycles.list(),
       repositories.sensors.list(),
       repositories.sensorDeployments.list(),
-      repositories.agriculturalEvents.list()
+      repositories.agriculturalEvents.list(),
+      repositories.datasets.list()
     ]);
     for (const farm of farms) registry.farms.set(farm.id, farm);
     for (const field of fields) registry.fields.set(field.id, field);
@@ -46,6 +49,7 @@ export class WorldRegistry {
     for (const sensor of sensors) registry.sensors.set(sensor.id, sensor);
     for (const deployment of deployments) registry.sensorDeployments.set(deployment.id, deployment);
     for (const event of events) registry.agriculturalEvents.set(event.id, event);
+    for (const dataset of datasets) registry.datasets.set(dataset.id, dataset);
     return registry;
   }
 
@@ -114,6 +118,23 @@ export class WorldRegistry {
     this.agriculturalEvents.set(event.id, event);
     await this.repositories.agriculturalEvents.save(event);
     return event;
+  }
+
+  async registerDataset(dataset: DatasetRecord): Promise<DatasetRecord> {
+    if (dataset.fieldId && !this.fields.has(dataset.fieldId)) {
+      throw new Error(`Dataset "${dataset.name}" references unknown field "${dataset.fieldId}"`);
+    }
+    this.datasets.set(dataset.id, dataset);
+    await this.repositories.datasets.save(dataset);
+    return dataset;
+  }
+
+  listDatasets(): DatasetRecord[] {
+    return Array.from(this.datasets.values());
+  }
+
+  listDatasetsForField(fieldId: string): DatasetRecord[] {
+    return Array.from(this.datasets.values()).filter((d) => d.fieldId === fieldId);
   }
 
   getFarm(id: string): Farm | null {

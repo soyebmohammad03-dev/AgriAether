@@ -8,7 +8,8 @@ import { createId } from '../domain/id';
 import type { TelemetryGenerator } from '../telemetry/TelemetryGenerator';
 import { WorldRegistry } from './WorldRegistry';
 import { buildDemoFieldBoundary, buildDemoZoneBoundaries } from '../geo/demoGeometry';
-import { areaHectares } from '../geo/geometry';
+import { ingestFieldBoundaryGeoJson } from '../data/GeoJsonIngestion';
+import { createDatasetRecord } from '../data/Dataset';
 
 export interface DemoWorldIds {
   farmId: string;
@@ -56,7 +57,13 @@ export async function ensureDemoWorld(registry: WorldRegistry, telemetryGenerato
     })
   );
 
-  const fieldBoundary = buildDemoFieldBoundary();
+  // Routed through the real Phase 5 ingestion/validation pipeline rather than
+  // used directly — proves the pipeline runs in the live app, not just tests.
+  const ingestion = ingestFieldBoundaryGeoJson(buildDemoFieldBoundary());
+  if (ingestion.status === 'INVALID' || !ingestion.geometry) {
+    throw new Error(`Demo field boundary failed ingestion validation: ${ingestion.issues.join('; ')}`);
+  }
+  const fieldBoundary = ingestion.geometry;
   const field = await registry.registerField(
     createField({
       farmId: farm.id,
@@ -64,8 +71,25 @@ export async function ensureDemoWorld(registry: WorldRegistry, telemetryGenerato
       description:
         'The field the default survey-loop mission flies over. Boundary is DEMO_ONLY geometry anchored at Null Island (0°N 0°E) — not a real survey.',
       geoReference: { kind: 'geodetic', crs: 'EPSG:4326', geometry: fieldBoundary, provenance: 'DEMO_ONLY' },
-      areaHectares: areaHectares(fieldBoundary),
+      areaHectares: ingestion.areaHectares,
       status: 'active'
+    })
+  );
+
+  await registry.registerDataset(
+    createDatasetRecord({
+      name: 'Demo Field 01 boundary',
+      provider: 'AgriAether fixture',
+      source: 'geo/demoGeometry.ts:buildDemoFieldBoundary',
+      type: 'VECTOR',
+      acquiredAtStart: Date.now(),
+      spatialExtent: ingestion.boundingBox,
+      crs: 'EPSG:4326',
+      license: 'N/A — fixture data, not a real dataset',
+      attribution: 'AgriAether',
+      provenance: 'SIMULATED',
+      quality: 'VALID',
+      fieldId: field.id
     })
   );
 

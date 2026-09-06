@@ -26,6 +26,11 @@ import { weatherObservationToObservations } from '../weather/weatherObservationT
 import { evaluateAllAnalyses, type AnalysisEvaluation } from '../sensing/AnalysisRegistry';
 import { evaluateSensorHealth } from '../sensing/SensorHealth';
 import { AnalysisRegistryPanel } from '../ui/AnalysisRegistryPanel';
+import { DataCatalogPanel } from '../ui/DataCatalogPanel';
+import { computeFieldCoverage } from '../data/Coverage';
+import { detectDataGaps } from '../data/DataGap';
+import { evaluateMissionDataRequirements } from '../data/MissionDataRequirement';
+import { buildFieldSummary } from '../data/FieldSummary';
 
 const CAMERA_BUTTON_IDS: Record<CameraMode, string> = {
   orbit: 'btnOrbit',
@@ -55,6 +60,7 @@ export class App {
   private readonly dataInspector = new DataInspector();
   private readonly weatherPanel = new WeatherPanel();
   private readonly analysisRegistryPanel = new AnalysisRegistryPanel();
+  private readonly dataCatalogPanel = new DataCatalogPanel();
   private readonly observationLog = new ObservationLog();
   private readonly minimap = new Minimap(
     document.getElementById('minimapCanvas') as HTMLCanvasElement,
@@ -181,6 +187,12 @@ export class App {
       setButtonActive('btnAnalyses', open);
     });
 
+    document.getElementById('btnDataCatalog')?.addEventListener('click', () => {
+      const open = this.dataCatalogPanel.toggle();
+      if (open) this.renderDataCatalog();
+      setButtonActive('btnDataCatalog', open);
+    });
+
     document.getElementById('btnGeoView')?.addEventListener('click', () => {
       this.geoViewOpen = !this.geoViewOpen;
       document.getElementById('geoView')?.classList.toggle('hidden', !this.geoViewOpen);
@@ -243,6 +255,44 @@ export class App {
       metadata: { note: 'DEMO_ONLY flat-earth approximation, not survey-grade' },
       ...this.observationContext
     });
+  }
+
+  /**
+   * Assembles the Data Catalog view from data already collected elsewhere
+   * in the app — real sensor kinds, real recent observations, real
+   * registered datasets. `spatialCoverageFraction` is left undefined
+   * (never a fabricated percentage): no raster has been ingested for the
+   * live field, only the field boundary vector dataset from demoWorld.ts.
+   */
+  private renderDataCatalog(): void {
+    const field = this.world.getField(this.worldIds.fieldId);
+    if (!field) return;
+
+    const availableSensorKinds = this.world.listSensors().map((s) => s.kind);
+    const recentObservations = this.observationLog.recent(200);
+    const datasets = this.world.listDatasets();
+
+    const coverage = computeFieldCoverage({
+      fieldId: field.id,
+      availableSensorKinds,
+      observations: recentObservations,
+      weatherAvailable: this.latestWeather !== null
+    });
+    const gaps = detectDataGaps(coverage);
+    const missionRequirements = evaluateMissionDataRequirements(this.analysisEvaluations, availableSensorKinds);
+    const summary = buildFieldSummary({
+      fieldId: field.id,
+      fieldName: field.name,
+      areaHectares: field.areaHectares,
+      datasetCount: datasets.length,
+      sensorObservationCount: recentObservations.length,
+      latestAcquisition: coverage.temporalCoverage.latestObservation,
+      coverage,
+      gaps,
+      analysisEvaluations: this.analysisEvaluations
+    });
+
+    this.dataCatalogPanel.render({ summary, gaps, missionRequirements, datasets });
   }
 
   private refreshSensorHealth(): void {
