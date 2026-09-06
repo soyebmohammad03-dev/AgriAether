@@ -22,14 +22,31 @@ export type Provenance =
 
 export type ObservationStatus = 'OK' | 'UNAVAILABLE' | 'INVALID';
 
-export interface ObservationLocation {
-  /** Coordinate frame this location is expressed in — never assume WGS84. */
-  frame: 'simulation-local';
-  /** Meters, simulation-local axes. */
-  x: number;
-  y: number;
-  z: number;
-}
+/**
+ * Where an Observation was made, in one of two frames that must never be
+ * silently conflated: the 3D simulation's own local axes, or a real
+ * geographic (WGS84) position. A consumer must always check `frame` before
+ * touching `x`/`y`/`z` or `lat`/`lon` — there is deliberately no shared
+ * shape that would let the two be mixed up.
+ */
+export type ObservationLocation =
+  | {
+      frame: 'simulation-local';
+      /** Meters, simulation-local axes. */
+      x: number;
+      y: number;
+      z: number;
+    }
+  | {
+      frame: 'geodetic';
+      crs: 'EPSG:4326';
+      lat: number;
+      lon: number;
+      /** Meters above the WGS84 ellipsoid, or null if not known. */
+      altitude?: number | null;
+      /** Meters, 1-sigma horizontal accuracy if the source states one; null if unknown. */
+      horizontalAccuracyMeters?: number | null;
+    };
 
 /**
  * Domain context linking an Observation back into the Farm/Field/Zone/
@@ -129,6 +146,41 @@ export function createSimulatedObservation<T>(
     location: params.location ?? null,
     source: params.source,
     provenance: 'SIMULATED',
+    confidence: params.confidence ?? null,
+    status: 'OK',
+    farmId: params.farmId ?? null,
+    fieldId: params.fieldId ?? null,
+    zoneId: params.zoneId ?? null,
+    sensorId: params.sensorId ?? null,
+    missionId: params.missionId ?? null,
+    droneId: params.droneId ?? null,
+    metadata: params.metadata ?? null
+  };
+  assertValidObservation(obs);
+  return obs;
+}
+
+/** Build an ESTIMATED observation — a value derived from another observation via a stated model/formula (e.g. a demo geodetic position computed from a simulated one). Never used for a raw sensor or simulation reading; those are createSimulatedObservation's job. */
+export function createEstimatedObservation<T>(
+  params: {
+    type: string;
+    value: T;
+    unit: string | null;
+    timestamp: number;
+    location?: ObservationLocation | null;
+    source: string;
+    confidence?: number | null;
+  } & ObservationContext
+): Observation<T> {
+  const obs: Observation<T> = {
+    id: createId(`obs_${params.type}`),
+    type: params.type,
+    value: params.value,
+    unit: params.unit,
+    timestamp: params.timestamp,
+    location: params.location ?? null,
+    source: params.source,
+    provenance: 'ESTIMATED',
     confidence: params.confidence ?? null,
     status: 'OK',
     farmId: params.farmId ?? null,

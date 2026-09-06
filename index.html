@@ -167,6 +167,19 @@
             </div>
         </div>
 
+        <div class="weather-block">
+            <div class="survey-header">
+                <span>Weather (External)</span>
+                <span class="panel-status deferred" id="weatherFreshness">—</span>
+            </div>
+            <div class="weather-grid">
+                <div><span>Air Temp</span><span id="weatherTemp">—</span></div>
+                <div><span>Humidity</span><span id="weatherHumidity">—</span></div>
+                <div><span>Wind</span><span id="weatherWind">—</span></div>
+            </div>
+            <div class="weather-note">Single external forecast point for the whole field — not per-zone. Source: <span id="weatherProvider">none</span></div>
+        </div>
+
         <div class="survey-progress">
             <div class="survey-header">
                 <span>Mission Progress</span>
@@ -217,6 +230,10 @@
             </button>
         </div>
         <div class="control-group">
+            <button class="ctrl-btn" id="btnGeoView" title="Toggle the demo geospatial view (WGS84 field boundary, DEMO_ONLY geometry)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 21s-7-6.4-7-11.5A7 7 0 0 1 19 9.5C19 14.6 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+                <span>Geo View</span>
+            </button>
             <button class="ctrl-btn" id="btnInspector" title="Toggle the observation data inspector">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M8 4v16"/></svg>
                 <span>Inspector</span>
@@ -249,6 +266,16 @@
             <span class="panel-status live">SIMULATED</span>
         </div>
         <div id="dataInspectorList"></div>
+    </div>
+
+    <!-- Geospatial View (closed by default) -->
+    <div id="geoView" class="hidden">
+        <div class="geoview-header">
+            <span>GEOSPATIAL VIEW — WGS84</span>
+            <span class="panel-status deferred">DEMO_ONLY</span>
+        </div>
+        <canvas id="geoViewCanvas" width="240" height="240"></canvas>
+        <div class="geoview-note">Field/zone boundaries and drone position are DEMO_ONLY geometry anchored at Null Island (0°N 0°E) — not a real place. Yellow crosshair: external weather observation point.</div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

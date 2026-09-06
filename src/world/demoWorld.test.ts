@@ -15,10 +15,17 @@ describe('ensureDemoWorld', () => {
 
     const field = registry.getField(ids.fieldId)!;
     expect(field.farmId).toBe(farm.id);
+    expect(field.geoReference.kind).toBe('geodetic');
+    if (field.geoReference.kind === 'geodetic') {
+      expect(field.geoReference.provenance).toBe('DEMO_ONLY');
+      expect(field.geoReference.crs).toBe('EPSG:4326');
+    }
+    expect(field.areaHectares).toBeGreaterThan(0);
 
     const zones = registry.listZonesForField(field.id);
     expect(zones.map((z) => z.name).sort()).toEqual(['Zone A', 'Zone B']);
     expect(zones.every((z) => z.classification === 'SIMULATED_MANAGEMENT_ZONE')).toBe(true);
+    expect(zones.every((z) => z.geoReference.kind === 'geodetic')).toBe(true);
 
     const sensors = registry.listSensors();
     expect(sensors.length).toBe(4);

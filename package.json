@@ -12,9 +12,15 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@turf/area": "7.4.0",
+    "@turf/bbox": "7.4.0",
+    "@turf/boolean-point-in-polygon": "7.4.0",
+    "@turf/distance": "7.4.0",
+    "@turf/helpers": "7.4.0",
     "three": "0.162.0"
   },
   "devDependencies": {
+    "@types/geojson": "7946.0.16",
     "@types/three": "0.162.0",
     "fake-indexeddb": "6.2.5",
     "typescript": "5.6.3",

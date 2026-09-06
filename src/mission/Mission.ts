@@ -9,6 +9,14 @@ export interface Waypoint {
   id: string;
   /** Simulation-local meters. */
   position: { x: number; y: number; z: number };
+  /**
+   * Real-world position, when one is known. Phase 3 establishes this field
+   * but leaves it null for the existing hardcoded mission — the mission is
+   * built before any Field's geodetic anchor exists, and computing this
+   * would mean guessing. A mission authored against a real or demo field
+   * boundary is what would actually populate it (later phase).
+   */
+  geoPosition: { crs: 'EPSG:4326'; lat: number; lon: number } | null;
   /** Meters above ground level the drone should hold near this waypoint. */
   altitude: number;
   /** Target ground speed approaching this waypoint, m/s. */
@@ -33,6 +41,7 @@ export interface Mission {
 export function createWaypoint(params: {
   id: string;
   position: { x: number; y: number; z: number };
+  geoPosition?: { crs: 'EPSG:4326'; lat: number; lon: number } | null;
   altitude: number;
   speedTarget: number;
   action?: Waypoint['action'];
@@ -46,6 +55,7 @@ export function createWaypoint(params: {
   return {
     id: params.id,
     position: params.position,
+    geoPosition: params.geoPosition ?? null,
     altitude: params.altitude,
     speedTarget: params.speedTarget,
     action: params.action ?? 'none'

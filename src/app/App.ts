@@ -11,11 +11,18 @@ import { Hud, setButtonActive } from '../ui/Hud';
 import { Minimap } from '../ui/Minimap';
 import { WorldPanel } from '../ui/WorldPanel';
 import { DataInspector, ObservationLog } from '../ui/DataInspector';
+import { GeoView } from '../ui/GeoView';
+import { WeatherPanel } from '../ui/WeatherPanel';
 import { createRepositories, type AgriAetherRepositories } from '../persistence/repositories';
 import { WorldRegistry } from '../world/WorldRegistry';
 import { ensureDemoWorld, type DemoWorldIds } from '../world/demoWorld';
 import { createAgriculturalEvent } from '../domain/AgriculturalEvent';
-import type { Observation, ObservationContext } from '../observation/Observation';
+import { createEstimatedObservation, type Observation, type ObservationContext } from '../observation/Observation';
+import { simulationLocalToDemoGeodetic } from '../geo/georeference';
+import { DEMO_FIELD_ANCHOR } from '../geo/demoGeometry';
+import { OpenMeteoProvider } from '../weather/OpenMeteoProvider';
+import { WeatherService } from '../weather/WeatherService';
+import { weatherObservationToObservations } from '../weather/weatherObservationToObservations';
 
 const CAMERA_BUTTON_IDS: Record<CameraMode, string> = {
   orbit: 'btnOrbit',
@@ -26,8 +33,10 @@ const CAMERA_BUTTON_IDS: Record<CameraMode, string> = {
 
 /** How often a sampled Observation is persisted to IndexedDB — every tick would be 60Hz of writes for no benefit at this stage. */
 const OBSERVATION_PERSIST_INTERVAL_MS = 2000;
+/** How often the real weather provider is polled — Open-Meteo's own data doesn't change faster than this and the WeatherService caches beneath it anyway. */
+const WEATHER_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
-/** Wires the scene, simulation, domain/persistence, and UI together; owns the render loop. */
+/** Wires the scene, simulation, domain/persistence, geospatial, and weather layers together; owns the render loop. */
 export class App {
   private readonly bundle = createSceneBundle(document.getElementById('droneCanvas') as HTMLCanvasElement);
   private readonly terrain = new Terrain(this.bundle.scene);
@@ -39,11 +48,16 @@ export class App {
   private readonly hud = new Hud();
   private readonly worldPanel = new WorldPanel();
   private readonly dataInspector = new DataInspector();
+  private readonly weatherPanel = new WeatherPanel();
   private readonly observationLog = new ObservationLog();
   private readonly minimap = new Minimap(
     document.getElementById('minimapCanvas') as HTMLCanvasElement,
     this.flightPathVisual.curve.getPoints(80)
   );
+  private readonly weatherService: WeatherService;
+  private geoView: GeoView | null = null;
+  private geoViewOpen = false;
+  private latestWeather: Awaited<ReturnType<WeatherService['getCurrentWeather']>> = null;
 
   private readonly clock = new THREE.Clock();
   private simSeconds = 0;
@@ -57,6 +71,7 @@ export class App {
     private readonly worldIds: DemoWorldIds,
     private readonly telemetryGenerator: TelemetryGenerator
   ) {
+    this.weatherService = new WeatherService(new OpenMeteoProvider(), repositories.weatherCache);
     this.cameraRig.setMode('orbit');
     this.wireControls();
     this.simulation.start();
@@ -67,6 +82,10 @@ export class App {
     if (farm && field) {
       this.worldPanel.render(farm, field, 'Simulation UAV-01', this.world.listSensors());
     }
+    this.geoView = this.buildGeoView();
+
+    void this.refreshWeather();
+    setInterval(() => void this.refreshWeather(), WEATHER_REFRESH_INTERVAL_MS);
   }
 
   /** Loads/seeds the domain world before the render loop starts — the one async step in an otherwise synchronous app. */
@@ -76,6 +95,21 @@ export class App {
     const generator = new TelemetryGenerator();
     const worldIds = await ensureDemoWorld(world, generator);
     return new App(repositories, world, worldIds, generator);
+  }
+
+  private buildGeoView(): GeoView | null {
+    const field = this.world.getField(this.worldIds.fieldId);
+    const zoneA = this.world.getZone(this.worldIds.zoneAId);
+    const zoneB = this.world.getZone(this.worldIds.zoneBId);
+    const canvas = document.getElementById('geoViewCanvas') as HTMLCanvasElement | null;
+    if (!canvas || !field || !zoneA || !zoneB) return null;
+    if (field.geoReference.kind !== 'geodetic' || zoneA.geoReference.kind !== 'geodetic' || zoneB.geoReference.kind !== 'geodetic') {
+      return null; // demo world wasn't seeded with geometry (e.g. an older persisted world) — nothing to plot, not an error
+    }
+    if (field.geoReference.geometry.type !== 'Polygon' || zoneA.geoReference.geometry.type !== 'Polygon' || zoneB.geoReference.geometry.type !== 'Polygon') {
+      return null;
+    }
+    return new GeoView(canvas, field.geoReference.geometry, zoneA.geoReference.geometry, zoneB.geoReference.geometry);
   }
 
   private get observationContext(): ObservationContext {
@@ -129,6 +163,12 @@ export class App {
       setButtonActive('btnInspector', open);
     });
 
+    document.getElementById('btnGeoView')?.addEventListener('click', () => {
+      this.geoViewOpen = !this.geoViewOpen;
+      document.getElementById('geoView')?.classList.toggle('hidden', !this.geoViewOpen);
+      setButtonActive('btnGeoView', this.geoViewOpen);
+    });
+
     document.getElementById('btnPause')?.addEventListener('click', (event) => {
       this.paused = !this.paused;
       this.simulation.setPaused(this.paused);
@@ -163,6 +203,53 @@ export class App {
     }
   }
 
+  /**
+   * A DEMO_ONLY geodetic estimate of the drone's position, derived from its
+   * simulated local position via georeference.ts's flat-earth
+   * approximation. Provenance is ESTIMATED (a transform applied to a
+   * simulated value), never SIMULATED-as-if-precise and never MEASURED —
+   * this is not a real GNSS fix.
+   */
+  private deriveDroneGeodeticObservation(
+    droneState: { position: { x: number; z: number }; timestamp: number }
+  ): Observation<{ crs: 'EPSG:4326'; lat: number; lon: number }> {
+    const geo = simulationLocalToDemoGeodetic(DEMO_FIELD_ANCHOR, droneState.position);
+    return createEstimatedObservation({
+      type: 'drone.position.geodetic_demo',
+      value: { crs: 'EPSG:4326', ...geo },
+      unit: null,
+      timestamp: droneState.timestamp,
+      location: { frame: 'geodetic', crs: 'EPSG:4326', lat: geo.lat, lon: geo.lon },
+      source: 'demo-georeference-transform',
+      confidence: 0.3,
+      metadata: { note: 'DEMO_ONLY flat-earth approximation, not survey-grade' },
+      ...this.observationContext
+    });
+  }
+
+  private async refreshWeather(): Promise<void> {
+    try {
+      const result = await this.weatherService.getCurrentWeather(DEMO_FIELD_ANCHOR);
+      this.latestWeather = result;
+      this.weatherPanel.update(result);
+      if (result) {
+        const observations = weatherObservationToObservations(result.observation, {
+          farmId: this.worldIds.farmId,
+          fieldId: this.worldIds.fieldId
+        });
+        for (const obs of observations) {
+          this.observationLog.push(obs);
+          void this.repositories.observations.save(obs);
+        }
+      }
+    } catch (error) {
+      // WeatherService already falls back to cache internally; a rejection here means something
+      // unexpected (e.g. the cache repository itself failing). The simulator must keep running either way.
+      console.warn('[AgriAether] weather refresh failed unexpectedly:', error);
+      this.weatherPanel.update(null);
+    }
+  }
+
   private tick = (): void => {
     requestAnimationFrame(this.tick);
     const dt = Math.min(this.clock.getDelta(), 0.05);
@@ -173,6 +260,7 @@ export class App {
 
     const droneState = this.simulation.tick(dt);
     const telemetry = this.telemetryGenerator.generate(droneState, this.observationContext);
+    const geodeticEstimate = this.deriveDroneGeodeticObservation(droneState);
     const observations: Observation<unknown>[] = [
       telemetry.position,
       telemetry.orientation,
@@ -180,6 +268,7 @@ export class App {
       telemetry.battery,
       telemetry.groundSpeed,
       telemetry.heading,
+      geodeticEstimate,
       ...(telemetry.missionProgress ? [telemetry.missionProgress] : [])
     ];
     for (const obs of observations) this.observationLog.push(obs);
@@ -191,6 +280,9 @@ export class App {
     this.minimap.draw(droneState);
     this.hud.update(droneState, telemetry, this.mission, this.simSeconds);
     this.dataInspector.render(this.observationLog);
+    if (this.geoViewOpen && this.geoView) {
+      this.geoView.draw(geodeticEstimate.value, this.latestWeather?.observation.location ?? null);
+    }
 
     this.bundle.renderer.render(this.bundle.scene, this.bundle.camera);
   };

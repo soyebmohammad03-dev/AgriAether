@@ -6,6 +6,7 @@ import type { SensorRecord } from '../domain/SensorRecord';
 import type { SensorDeployment } from '../domain/SensorDeployment';
 import type { AgriculturalEvent } from '../domain/AgriculturalEvent';
 import type { Observation } from '../observation/Observation';
+import type { WeatherCacheEntry } from '../weather/WeatherCacheEntry';
 import type { Repository } from './Repository';
 import { InMemoryRepository } from './InMemoryRepository';
 import { IndexedDbRepository } from './IndexedDbRepository';
@@ -19,6 +20,7 @@ export interface AgriAetherRepositories {
   sensorDeployments: Repository<SensorDeployment>;
   observations: Repository<Observation<unknown>>;
   agriculturalEvents: Repository<AgriculturalEvent>;
+  weatherCache: Repository<WeatherCacheEntry>;
 }
 
 export function createInMemoryRepositories(): AgriAetherRepositories {
@@ -30,7 +32,8 @@ export function createInMemoryRepositories(): AgriAetherRepositories {
     sensors: new InMemoryRepository<SensorRecord>(),
     sensorDeployments: new InMemoryRepository<SensorDeployment>(),
     observations: new InMemoryRepository<Observation<unknown>>(),
-    agriculturalEvents: new InMemoryRepository<AgriculturalEvent>()
+    agriculturalEvents: new InMemoryRepository<AgriculturalEvent>(),
+    weatherCache: new InMemoryRepository<WeatherCacheEntry>()
   };
 }
 
@@ -43,7 +46,8 @@ export function createIndexedDbRepositories(): AgriAetherRepositories {
     sensors: new IndexedDbRepository<SensorRecord>('sensors'),
     sensorDeployments: new IndexedDbRepository<SensorDeployment>('sensorDeployments'),
     observations: new IndexedDbRepository<Observation<unknown>>('observations'),
-    agriculturalEvents: new IndexedDbRepository<AgriculturalEvent>('agriculturalEvents')
+    agriculturalEvents: new IndexedDbRepository<AgriculturalEvent>('agriculturalEvents'),
+    weatherCache: new IndexedDbRepository<WeatherCacheEntry>('weatherCache')
   };
 }
 

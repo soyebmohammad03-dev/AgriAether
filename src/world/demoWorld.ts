@@ -7,6 +7,8 @@ import { createSensorDeployment } from '../domain/SensorDeployment';
 import { createId } from '../domain/id';
 import type { TelemetryGenerator } from '../telemetry/TelemetryGenerator';
 import { WorldRegistry } from './WorldRegistry';
+import { buildDemoFieldBoundary, buildDemoZoneBoundaries } from '../geo/demoGeometry';
+import { areaHectares } from '../geo/geometry';
 
 export interface DemoWorldIds {
   farmId: string;
@@ -54,22 +56,27 @@ export async function ensureDemoWorld(registry: WorldRegistry, telemetryGenerato
     })
   );
 
+  const fieldBoundary = buildDemoFieldBoundary();
   const field = await registry.registerField(
     createField({
       farmId: farm.id,
       name: DEMO_FIELD_NAME,
-      description: 'The field the default survey-loop mission flies over. Simulation-local only — no real boundary is known.',
-      geoReference: { kind: 'simulation' },
+      description:
+        'The field the default survey-loop mission flies over. Boundary is DEMO_ONLY geometry anchored at Null Island (0°N 0°E) — not a real survey.',
+      geoReference: { kind: 'geodetic', crs: 'EPSG:4326', geometry: fieldBoundary, provenance: 'DEMO_ONLY' },
+      areaHectares: areaHectares(fieldBoundary),
       status: 'active'
     })
   );
+
+  const { zoneA: zoneABoundary, zoneB: zoneBBoundary } = buildDemoZoneBoundaries();
 
   const zoneA = await registry.registerZone(
     createZone({
       fieldId: field.id,
       name: 'Zone A',
       classification: 'SIMULATED_MANAGEMENT_ZONE',
-      geoReference: { kind: 'simulation' }
+      geoReference: { kind: 'geodetic', crs: 'EPSG:4326', geometry: zoneABoundary, provenance: 'DEMO_ONLY' }
     })
   );
 
@@ -78,7 +85,7 @@ export async function ensureDemoWorld(registry: WorldRegistry, telemetryGenerato
       fieldId: field.id,
       name: 'Zone B',
       classification: 'SIMULATED_MANAGEMENT_ZONE',
-      geoReference: { kind: 'simulation' }
+      geoReference: { kind: 'geodetic', crs: 'EPSG:4326', geometry: zoneBBoundary, provenance: 'DEMO_ONLY' }
     })
   );
 
