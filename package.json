@@ -1,0 +1,23 @@
+{
+  "name": "agriaether",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AgriAether simulation core — open agricultural intelligence and autonomous field operations platform (early-stage simulation foundation).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "three": "0.162.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.162.0",
+    "typescript": "5.6.3",
+    "vite": "8.2.2",
+    "vitest": "5.0.0"
+  }
+}

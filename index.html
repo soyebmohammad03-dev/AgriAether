@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgriAether — Simulation Core</title>
+    <meta name="description" content="AgriAether early-stage agricultural drone simulation core. All telemetry shown is simulated; no real sensors or agricultural measurements are implemented yet.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+    <canvas id="droneCanvas"></canvas>
+
+    <!-- Loading Screen -->
+    <div id="loadingScreen">
+        <div class="loader-content">
+            <div class="loader-icon">
+                <svg viewBox="0 0 80 80" fill="none">
+                    <circle cx="40" cy="40" r="36" stroke="rgba(74,222,128,0.2)" stroke-width="2"/>
+                    <circle cx="40" cy="40" r="36" stroke="url(#loaderGrad)" stroke-width="2" stroke-dasharray="226" stroke-dashoffset="170" class="loader-circle"/>
+                    <defs><linearGradient id="loaderGrad" x1="0" y1="0" x2="80" y2="80"><stop stop-color="#4ade80"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs>
+                </svg>
+            </div>
+            <h2>AgriAether</h2>
+            <p class="loader-sub">Initializing simulation core…</p>
+        </div>
+    </div>
+
+    <!-- Top HUD -->
+    <header id="topHUD">
+        <div class="hud-left">
+            <div class="logo">
+                <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                    <path d="M14 2L2 8v12l12 6 12-6V8L14 2z" stroke="#4ade80" stroke-width="1.5" fill="none"/>
+                    <circle cx="14" cy="14" r="4" fill="#4ade80" opacity="0.6"/>
+                    <path d="M14 6v16M6 10l16 8M6 18l16-8" stroke="#4ade80" stroke-width="0.5" opacity="0.4"/>
+                </svg>
+                <span>AgriAether <small>Simulation Core</small></span>
+            </div>
+        </div>
+        <div class="hud-center">
+            <div class="flight-mode" id="flightMode">
+                <span class="mode-dot"></span>
+                <span id="modeText">IDLE</span>
+            </div>
+        </div>
+        <div class="hud-right">
+            <div class="hud-stat">
+                <span class="stat-label">BATTERY (SIM)</span>
+                <div class="battery-bar">
+                    <div class="battery-fill" id="batteryFill"></div>
+                </div>
+                <span class="stat-value" id="batteryVal">100%</span>
+            </div>
+            <div class="sim-badge" title="No real hardware is connected. Every value on this screen is produced by the local simulation engine.">◆ SIMULATION</div>
+        </div>
+    </header>
+
+    <!-- Left Panel - Telemetry -->
+    <aside id="telemetryPanel">
+        <div class="panel-header">
+            <h3>FLIGHT TELEMETRY</h3>
+            <div class="panel-status live">SIMULATED</div>
+        </div>
+        <div class="telemetry-grid">
+            <div class="telem-item">
+                <span class="telem-label">ALTITUDE AGL</span>
+                <span class="telem-value" id="altitude">—</span>
+                <span class="telem-unit">m</span>
+            </div>
+            <div class="telem-item">
+                <span class="telem-label">GROUND SPEED</span>
+                <span class="telem-value" id="speed">—</span>
+                <span class="telem-unit">m/s</span>
+            </div>
+            <div class="telem-item">
+                <span class="telem-label">HEADING</span>
+                <span class="telem-value" id="heading">—</span>
+                <span class="telem-unit">°</span>
+            </div>
+            <div class="telem-item">
+                <span class="telem-label">PITCH</span>
+                <span class="telem-value" id="pitch">—</span>
+                <span class="telem-unit">°</span>
+            </div>
+            <div class="telem-item">
+                <span class="telem-label">ROLL</span>
+                <span class="telem-value" id="roll">—</span>
+                <span class="telem-unit">°</span>
+            </div>
+            <div class="telem-item">
+                <span class="telem-label">YAW RATE</span>
+                <span class="telem-value" id="yawRate">—</span>
+                <span class="telem-unit">°/s</span>
+            </div>
+        </div>
+        <div class="compass-container">
+            <div class="compass" id="compass">
+                <div class="compass-ring">
+                    <span class="compass-dir n">N</span>
+                    <span class="compass-dir e">E</span>
+                    <span class="compass-dir s">S</span>
+                    <span class="compass-dir w">W</span>
+                </div>
+                <div class="compass-needle" id="compassNeedle"></div>
+            </div>
+        </div>
+        <div class="coords-box">
+            <div class="coords-note">Simulation-local coordinates (meters from scene origin) — not a real-world geolocation.</div>
+            <div class="coord-row">
+                <span>X</span>
+                <span id="simX">0.00 m</span>
+            </div>
+            <div class="coord-row">
+                <span>Z</span>
+                <span id="simZ">0.00 m</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Right Panel - Data Layers (deferred) -->
+    <aside id="analysisPanel">
+        <div class="panel-header">
+            <h3>DATA LAYERS</h3>
+            <div class="panel-status deferred">DEFERRED</div>
+        </div>
+
+        <div class="deferred-note">
+            No real or simulated sensor exists yet for these quantities. Displaying a number here would be fabricated science — see the Phase 0 audit. They are deferred to later roadmap phases.
+        </div>
+
+        <div class="analysis-cards">
+            <div class="analysis-card">
+                <div class="card-icon">🌾</div>
+                <div class="card-info">
+                    <span class="card-label">Vegetation Index (NDVI)</span>
+                    <span class="card-value">Requires multispectral sensor</span>
+                </div>
+                <div class="card-badge">N/A</div>
+            </div>
+            <div class="analysis-card">
+                <div class="card-icon">💧</div>
+                <div class="card-info">
+                    <span class="card-label">Soil Moisture</span>
+                    <span class="card-value">Requires ground probe</span>
+                </div>
+                <div class="card-badge">N/A</div>
+            </div>
+            <div class="analysis-card">
+                <div class="card-icon">🐛</div>
+                <div class="card-info">
+                    <span class="card-label">Pest / Disease Detection</span>
+                    <span class="card-value">Requires trained CV model</span>
+                </div>
+                <div class="card-badge">N/A</div>
+            </div>
+            <div class="analysis-card">
+                <div class="card-icon">🌡️</div>
+                <div class="card-info">
+                    <span class="card-label">Canopy Temperature</span>
+                    <span class="card-value">Requires thermal sensor</span>
+                </div>
+                <div class="card-badge">N/A</div>
+            </div>
+        </div>
+
+        <div class="survey-progress">
+            <div class="survey-header">
+                <span>Mission Progress</span>
+                <span id="missionProgressPercent">—</span>
+            </div>
+            <div class="survey-bar">
+                <div class="survey-fill" id="missionProgressFill"></div>
+            </div>
+            <div class="survey-stats">
+                <div><span>Waypoint</span><span id="missionWaypoint">—</span></div>
+                <div><span>Flight state</span><span id="flightStateValue">IDLE</span></div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Bottom Controls -->
+    <div id="bottomBar">
+        <div class="control-group">
+            <button class="ctrl-btn" id="btnOrbit" title="Orbit Camera">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                <span>Orbit</span>
+            </button>
+            <button class="ctrl-btn" id="btnFollow" title="Follow Drone">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                <span>Follow</span>
+            </button>
+            <button class="ctrl-btn" id="btnTopDown" title="Top-Down View">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
+                <span>Top View</span>
+            </button>
+            <button class="ctrl-btn" id="btnFPV" title="First Person View">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                <span>FPV</span>
+            </button>
+        </div>
+        <div class="control-group center-controls">
+            <button class="ctrl-btn accent" id="btnDemoOverlay" title="Toggle synthetic demo overlay — a fixed decorative pattern, not real or simulated vegetation data">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v20M2 12h20"/><circle cx="12" cy="12" r="6"/></svg>
+                <span>Demo Overlay</span>
+            </button>
+            <button class="ctrl-btn accent" id="btnSpray" title="Toggle Spray Visualization (visual effect only, no application record)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v6M6 8l4 4M18 8l-4 4M8 18a4 4 0 0 0 8 0c0-4-4-6-4-10-0 4-4 6-4 10z"/></svg>
+                <span>Spray</span>
+            </button>
+            <button class="ctrl-btn accent active" id="btnScan" title="Toggle Scan Beam (visual effect only, collects no data)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5"/><line x1="12" y1="22" x2="12" y2="16"/><polyline points="22,8.5 12,14 2,8.5"/></svg>
+                <span>Scan Beam</span>
+            </button>
+        </div>
+        <div class="control-group">
+            <button class="ctrl-btn" id="btnReset" title="Reset View">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                <span>Reset</span>
+            </button>
+            <button class="ctrl-btn" id="btnPause" title="Pause/Resume">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                <span>Pause</span>
+            </button>
+            <div class="time-display">
+                <span class="time-label">SIM TIME</span>
+                <span class="time-value" id="simTime">00:00:00</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Minimap -->
+    <div id="minimap">
+        <canvas id="minimapCanvas" width="180" height="180"></canvas>
+        <div class="minimap-label">SIMULATION MAP</div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
