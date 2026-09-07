@@ -54,4 +54,30 @@ describe('KnowledgeGraph.build', () => {
     const evidence = graph.evidenceFor(`Field:${field.id}`);
     expect(evidence.some((n) => n.id === 'Observation:obs_1')).toBe(true);
   });
+
+  it('links a Field to an Analysis node and traverses through it to its supporting observation', async () => {
+    const { registry, field, zone } = await seededWorld();
+    const observation: Observation<number> = {
+      id: 'obs_2',
+      type: 'soil.moisture',
+      value: 5,
+      unit: 'percent',
+      timestamp: 1000,
+      location: null,
+      source: 'sim-sensor:soil',
+      provenance: 'SIMULATED',
+      confidence: 0.9,
+      status: 'OK',
+      fieldId: field.id,
+      zoneId: zone.id
+    };
+    const graph = KnowledgeGraph.build(registry, [observation], [
+      { id: 'analysis_1', type: 'disease_pest_risk', fieldId: field.id, zoneId: null, computedAt: 2000, supportingObservationIds: ['obs_2'] }
+    ]);
+
+    expect(graph.getNode('Analysis:analysis_1')?.type).toBe('Analysis');
+    expect(graph.neighbors(`Field:${field.id}`).some((e) => e.to === 'Analysis:analysis_1' && e.type === 'HAS_ANALYSIS')).toBe(true);
+    const evidence = graph.evidenceFor(`Field:${field.id}`);
+    expect(evidence.some((n) => n.id === 'Observation:obs_2')).toBe(true);
+  });
 });

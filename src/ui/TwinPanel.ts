@@ -83,6 +83,14 @@ export class TwinPanel {
       ? `<div class="catalog-muted">Missing evidence: ${twin.evidence.missingTypes.join(', ')}</div>`
       : '';
 
+    const diseasePestRows =
+      twin.diseasePestRisk.riskFactors.length > 0
+        ? twin.diseasePestRisk.riskFactors.map((f) => `<div class="catalog-gap">${f.type}: ${f.description}</div>`).join('')
+        : `<div class="catalog-muted">${twin.diseasePestRisk.status} — no known risk factor fired.</div>`;
+    const diseasePestMissingRow = twin.diseasePestRisk.missingEvidence.length
+      ? `<div class="catalog-muted">Missing evidence: ${twin.diseasePestRisk.missingEvidence.join(', ')}</div>`
+      : '';
+
     const graphRows = evidenceNodes.length
       ? evidenceNodes.slice(0, 20).map((n) => `<div class="catalog-dataset">${n.type}: ${n.label}${n.timestamp ? ` @ ${new Date(n.timestamp).toLocaleTimeString()}` : ''}</div>`).join('')
       : '<div class="catalog-muted">No graph-linked observation evidence found for this field yet.</div>';
@@ -98,6 +106,7 @@ export class TwinPanel {
       `<div class="catalog-section"><h4>Vegetation Evidence</h4>${vegetationRows}</div>`,
       `<div class="catalog-section"><h4>Recent Trends (7d, measured-vs-measured, never modeled)</h4>${trendRows}</div>`,
       `<div class="catalog-section"><h4>Fused Evidence — Field Window</h4>${evidenceItemRows}${conflictRows}${missingRows}</div>`,
+      `<div class="catalog-section"><h4>Disease / Pest Risk Factors (${twin.diseasePestRisk.status}, screen only — never a diagnosis)</h4>${diseasePestRows}${diseasePestMissingRow}</div>`,
       `<div class="catalog-section"><h4>Knowledge Graph — Observation Evidence</h4>${graphRows}</div>`
     ].join('');
   }

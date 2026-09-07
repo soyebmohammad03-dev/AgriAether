@@ -31,6 +31,7 @@ describe('buildFieldTwin', () => {
     expect(twin.weatherState).toBe('INSUFFICIENT_DATA');
     expect(twin.cropState.observationCount).toBe(0);
     expect(twin.vegetationEvidence).toEqual([]);
+    expect(twin.diseasePestRisk.status).toBe('INSUFFICIENT_DATA');
   });
 
   it('summarizes the latest soil sample when one exists, keyed to real recorded measurements', () => {

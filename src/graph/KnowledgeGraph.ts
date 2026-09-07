@@ -9,7 +9,7 @@ import type { Observation } from '../observation/Observation';
  * app. Rebuilt on demand from the current WorldRegistry/observation state;
  * never persisted itself.
  */
-export type NodeType = 'Farm' | 'Field' | 'Zone' | 'Sensor' | 'CropCycle' | 'Dataset' | 'Observation';
+export type NodeType = 'Farm' | 'Field' | 'Zone' | 'Sensor' | 'CropCycle' | 'Dataset' | 'Observation' | 'Analysis';
 
 export type RelationshipType =
   | 'HAS_FIELD'
@@ -17,7 +17,19 @@ export type RelationshipType =
   | 'DEPLOYED_ON'
   | 'HAS_CROP_CYCLE'
   | 'HAS_DATASET'
-  | 'PRODUCED_BY';
+  | 'PRODUCED_BY'
+  | 'HAS_ANALYSIS'
+  | 'EVIDENCE_FROM';
+
+/** Minimal shape any transient analysis result (crop stress, disease/pest risk, ...) needs to appear in the graph — analyses aren't persisted, so this is supplied by the caller each rebuild, same as `observations`. */
+export interface AnalysisGraphInput {
+  id: string;
+  type: string;
+  fieldId: string;
+  zoneId: string | null;
+  computedAt: number;
+  supportingObservationIds: string[];
+}
 
 export interface GraphNode {
   id: string;
@@ -101,7 +113,11 @@ export class KnowledgeGraph {
    * reference already exists; nothing here infers a relationship that
    * isn't already stated on the underlying record.
    */
-  static build(world: WorldRegistry, observations: ReadonlyArray<Observation<unknown>>): KnowledgeGraph {
+  static build(
+    world: WorldRegistry,
+    observations: ReadonlyArray<Observation<unknown>>,
+    analyses: ReadonlyArray<AnalysisGraphInput> = []
+  ): KnowledgeGraph {
     const graph = new KnowledgeGraph();
 
     for (const farm of world.listFarms()) {
@@ -158,6 +174,19 @@ export class KnowledgeGraph {
       if (graph.getNode(id)) continue;
       graph.addNode({ id, type: 'Observation', label: obs.type, timestamp: obs.timestamp });
       graph.addEdge({ from: id, to: zoneNodeId, type: 'PRODUCED_BY', provenance: obs.provenance });
+    }
+
+    for (const analysis of analyses) {
+      const fieldNodeId = nodeId('Field', analysis.fieldId);
+      if (!graph.getNode(fieldNodeId)) continue;
+      const id = nodeId('Analysis', analysis.id);
+      graph.addNode({ id, type: 'Analysis', label: analysis.type, timestamp: analysis.computedAt });
+      graph.addEdge({ from: fieldNodeId, to: id, type: 'HAS_ANALYSIS', provenance: analysis.type });
+      for (const obsId of analysis.supportingObservationIds) {
+        const obsNodeId = nodeId('Observation', obsId);
+        if (!graph.getNode(obsNodeId)) continue;
+        graph.addEdge({ from: id, to: obsNodeId, type: 'EVIDENCE_FROM', provenance: null });
+      }
     }
 
     return graph;

@@ -12,6 +12,7 @@ import { summarizeFieldCropStatus, type FieldCropStatusSummary } from '../domain
 import { summarizeWeatherWindow, type WeatherWindowSummary } from '../weather/WeatherIntelligence';
 import { alignObservationEvidence, type FusedEvidenceBundle } from '../sensing/SensorFusion';
 import { trendDirection, type TrendResult } from '../temporal/TemporalIntelligence';
+import { assessDiseasePestRisk, type DiseasePestAssessment } from '../sensing/DiseasePestSignal';
 
 /** Observation types tracked for recent-trend reporting — the small set this codebase can currently produce a numeric time series for. Extend as new sensor kinds land; never invent a type that has no producer. */
 export const TWIN_TRACKED_TYPES: readonly string[] = [
@@ -45,6 +46,7 @@ export interface FieldTwinSnapshot {
   evidence: FusedEvidenceBundle;
   coverage: FieldCoverageReport;
   dataGaps: DataGap[];
+  diseasePestRisk: DiseasePestAssessment;
 }
 
 export function buildFieldTwin(params: {
@@ -92,19 +94,35 @@ export function buildFieldTwin(params: {
     expectedTypes: trackedTypes
   });
 
+  const soilState = latestSoilSample ? summarizeSoilSampleQuality(latestSoilSample) : 'INSUFFICIENT_DATA';
+  const weatherState = params.dailyWeatherRecords.length > 0 ? summarizeWeatherWindow(params.dailyWeatherRecords) : 'INSUFFICIENT_DATA';
+  const latestVegetation = vegetationEvidence.length > 0 ? vegetationEvidence[vegetationEvidence.length - 1] : null;
+
+  const diseasePestRisk = assessDiseasePestRisk({
+    fieldId: params.field.id,
+    soilMoistureStatus: soilState === 'INSUFFICIENT_DATA' ? null : soilState.moistureStatus,
+    soilSampleId: latestSoilSample?.id ?? null,
+    precipitationTotalMm: weatherState === 'INSUFFICIENT_DATA' ? null : weatherState.precipitationTotalMm,
+    tMaxAvgC: weatherState === 'INSUFFICIENT_DATA' ? null : weatherState.tMaxAvgC,
+    weatherObservationId: params.dailyWeatherRecords.length > 0 ? params.dailyWeatherRecords[params.dailyWeatherRecords.length - 1].id : null,
+    vegetationIndex: latestVegetation ? { id: latestVegetation.id, type: latestVegetation.type, value: latestVegetation.value as number } : null,
+    hasCropObservation: params.cropObservations.length > 0
+  });
+
   return {
     fieldId: params.field.id,
     fieldName: params.field.name,
     generatedAt: now,
     zones: params.zones.map((z) => ({ id: z.id, name: z.name })),
     activeSensors: params.activeSensors.map((s) => ({ id: s.id, kind: s.kind, name: s.name })),
-    soilState: latestSoilSample ? summarizeSoilSampleQuality(latestSoilSample) : 'INSUFFICIENT_DATA',
+    soilState,
     cropState: summarizeFieldCropStatus(params.field.id, params.cropObservations),
-    weatherState: params.dailyWeatherRecords.length > 0 ? summarizeWeatherWindow(params.dailyWeatherRecords) : 'INSUFFICIENT_DATA',
+    weatherState,
     vegetationEvidence,
     recentTrends,
     evidence,
     coverage: params.coverage,
-    dataGaps: params.dataGaps
+    dataGaps: params.dataGaps,
+    diseasePestRisk
   };
 }

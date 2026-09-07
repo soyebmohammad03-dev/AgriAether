@@ -463,7 +463,16 @@ export class App {
       dataGaps: detectDataGaps(coverage)
     });
 
-    const graph = KnowledgeGraph.build(this.world, recentObservations);
+    const graph = KnowledgeGraph.build(this.world, recentObservations, [
+      {
+        id: twin.diseasePestRisk.id,
+        type: 'disease_pest_risk',
+        fieldId: twin.diseasePestRisk.fieldId,
+        zoneId: twin.diseasePestRisk.zoneId,
+        computedAt: twin.diseasePestRisk.computedAt,
+        supportingObservationIds: twin.diseasePestRisk.riskFactors.flatMap((f) => f.supportingObservationIds)
+      }
+    ]);
     const evidenceNodes = graph.evidenceFor(`Field:${field.id}`);
 
     this.twinPanel.render(twin, evidenceNodes);
