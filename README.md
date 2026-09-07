@@ -9,8 +9,10 @@ sensing/analytics architecture that currently reports every remote-sensing
 analysis as honestly unsupported** (no camera or soil sensor exists yet —
 see "Remote sensing & agricultural analytics" below), **and a real
 GeoJSON/raster ingestion pipeline exercised end-to-end by a deterministic
-fixture** (see "Real agricultural data pipeline" below) — no live external
-dataset provider is wired up, by design.
+fixture** (see "Real agricultural data pipeline" below), **plus a real CSV/
+GeoJSON import UI with validation, deduplication, and an auditable report**
+(see "Real agricultural data ingestion + field data platform" below) — no
+live external dataset provider beyond weather is wired up, by design.
 
 ## Project status (be skeptical of anything that sounds bigger than this)
 
@@ -140,8 +142,11 @@ dataset provider is wired up, by design.
 - No spatial grid/tiling engine beyond the minimum row/col window addressing
   `Raster.ts` needs for its own fixture-scale tests — evaluated and
   deferred; see "What we deliberately did not build," below.
-- No file upload UI — `AssetSecurity.validateUploadCandidate` exists as a
-  tested contract for when one is built, not a working feature today.
+- File upload UI now exists (Phase 7, `ui/ImportPanel.ts`) for CSV
+  observation and GeoJSON field-boundary import, using
+  `AssetSecurity.validateUploadCandidate` for real — see "Real agricultural
+  data ingestion + field data platform" below. Still no upload path for
+  imagery/raster files.
 - No map basemap/tiles — see "Map/geospatial visualization" below for why.
 - No AI-generated recommendations, no autonomous mission planning, no
   causal claims from temporal change detection (it reports
@@ -630,6 +635,128 @@ with a plausible range — that's a per-quantity exercise left for whichever
 quantity gets a real deployment first, not something to bulk-retrofit
 speculatively.
 
+## Real agricultural data ingestion + field data platform (Phase 7)
+
+Phase 6 added domain models for ground/crop observations with no way to get
+real-world data into them except hand-written fixtures. Phase 7 is the
+ingestion layer: a generic, auditable pipeline that takes an untrusted CSV
+or GeoJSON file and turns it into `Observation`s (or a field boundary)
+without losing where the data came from, what unit it's in, or how
+trustworthy it is.
+
+**`DataSource` registry** (`src/data/DataSource.ts`). A `DataSourceRecord`
+describes a *provider* — type (`CSV_UPLOAD`, `GEOJSON_UPLOAD`, `DRONE`,
+`GROUND_SENSOR`, `WEATHER_API`, `SATELLITE`, `FARMER_ENTRY`,
+`RESEARCH_DATASET`, `IOT_GATEWAY`, `MANUAL_OBSERVATION`, `SIMULATION`,
+`DERIVED`), coverage, reliability, license/attribution, and an
+`ingestionStatus` of `CONNECTED` / `MANUAL_UPLOAD` / `UNCONFIGURED`. This is
+distinct from `DatasetRecord` (`src/data/Dataset.ts`), which describes one
+*product* a source produced. `builtInDataSources()` lists exactly three
+sources this app actually has: the simulation engine (`CONNECTED`), and CSV/
+GeoJSON manual-upload pathways (`MANUAL_UPLOAD`) — nothing claims
+`CONNECTED` without a real implementation behind it; `createDataSourceRecord`
+throws if a `RESEARCH_DATASET` tries to claim otherwise. `App.ts` registers
+these once by name at startup (`ensureBuiltInDataSources`), so reloading the
+app doesn't pile up duplicate records.
+
+**CSV import** (`src/data/CsvImport.ts`, `ImportValidation.ts`,
+`ImportPipeline.ts`). A dependency-free RFC-4180-ish parser (quoting, escaped
+quotes, row/field-length caps) feeds a column-mapping layer: a researcher
+maps their file's actual column names (e.g. `date_time`, `soil_moisture`)
+onto the canonical fields (`timestamp`, `observation_type`, `value`, `unit`,
+`latitude`/`longitude`, `field_id`/`zone_id`, `sensor_id`) rather than the
+importer guessing. `validateObservationDraft` then runs the reusable rule
+set: required fields, timestamp parseability/future-dating, coordinate
+validity (via `geo/geometry.ts`), a canonical-unit table with a few
+explicit conversions (°F→°C, in→mm — see `ImportValidation.ts`'s
+`CANONICAL_UNITS`), field/zone ownership against the known world, and
+sensor-capability compatibility (`assertSensorCapable`'s check, applied
+per row against `SensorRecord.capabilities`). A row with a hard error is
+`REJECTED` and excluded; a row with only warnings (missing unit, no
+location) is `QUESTIONABLE` and still imported, tagged
+`metadata.dataQuality: 'QUESTIONABLE'`. `runCsvObservationImport` builds
+the accepted rows into `Observation`s via the new
+`createImportedObservation` factory (`observation/Observation.ts`) — which
+requires the caller to state `provenance` explicitly (`MEASURED` /
+`EXTERNAL` / `USER_REPORTED` / `UNKNOWN`, never defaulted) and requires
+`source` to be `import:<dataSourceId>`, a pattern `assertValidObservation`'s
+rule set then forbids from ever claiming `SIMULATED`.
+
+**GeoJSON field-boundary import** (`ImportPipeline.ts`'s
+`runFieldBoundaryImport`, reusing the Phase 5 `ingestFieldBoundaryGeoJson`).
+GeoJSON without a `crs` member is WGS84 per RFC 7946 and proceeds normally;
+a legacy `crs` member naming anything other than CRS84/EPSG:4326 is
+**rejected outright** — never reprojected or guessed at. An accepted,
+non-self-intersecting Polygon/MultiPolygon becomes a `GeoReference` with
+the importer's declared `GeodeticProvenance` (`SURVEYED` / `USER_DRAWN` /
+`EXTERNAL` — never `DEMO_ONLY`, which stays reserved for the seeded demo
+field) and is registered as a new `Field` on the current farm.
+
+**Idempotency** (`src/data/ImportIdentity.ts`). Imported `Observation`s get
+a *deterministic* id (an FNV-1a hash of source + type + timestamp + value +
+unit + location + field/zone/sensor context) instead of the random
+`createId()` every other factory uses. Re-importing the same file produces
+the same ids, so a second run reports them as `duplicatesSkipped` rather
+than creating duplicate rows or silently overwriting anything — see
+`ImportPipeline.test.ts`'s idempotency test.
+
+**Auditable `ImportReport`** (`ImportPipeline.ts`). Every import — CSV or
+GeoJSON — produces one: records received/accepted/questionable/rejected,
+duplicates skipped, missing-timestamp/coordinate counts, unit issues, and
+the actual validation error/warning text. Nothing in this report is a
+fabricated summary; it's exactly what the pipeline did to the actual input.
+`WorldRegistry.recordImport` persists it (new `importRecords` store,
+IndexedDB schema v5) and the Data Catalog's **Import History** section lists
+recent runs.
+
+**UI** (`src/ui/ImportPanel.ts`, wired into `App.ts` behind the new "Import
+Data" button). Two tabs — CSV Observations / GeoJSON Field Boundary — each:
+pick a file (validated by the Phase 5 `AssetSecurity.validateUploadCandidate`
+— MIME allowlist, size cap, filename sanitization, before any parsing
+happens), map columns or preview geometry, declare provenance explicitly,
+run the import synchronously (no fake progress bar — there's no async work
+to show progress for), and see the `ImportReport` inline. The Data Catalog
+gained **Data Sources** and **Import History** sections; the Observation
+Inspector now also shows each observation's timestamp, location, and
+`metadata.dataQuality` alongside the existing provenance/confidence/status
+fields.
+
+**Public dataset evaluation, deliberately not integrated**
+(`src/data/PublicDatasetEvaluation.ts`). Five real candidates were
+evaluated for accessibility, licensing, spatial/temporal meaning, and
+whether their values are measured, modeled, or estimated: Open-Meteo
+(already integrated, Phase 3), ISRIC SoilGrids (a *modeled* 250m soil
+surface — a strong future `ESTIMATED`-provenance layer, not appropriate to
+present as ground truth for the current DEMO_ONLY field), USDA NASS Quick
+Stats (county-level only, wrong resolution, needs an API key), NASA POWER
+(coarser than the already-integrated weather pipeline), and USDA SSURGO
+(genuinely field-scale and measured, but its web service needs a
+server-side proxy this phase's architecture rule — no new backend —
+deliberately doesn't add). None were wired up live; each is recorded with
+its `verdict` so a future phase with a small proxy or an API-key input knows
+which `INTEGRATE_LATER` candidate to start with.
+
+**Provenance vocabulary mapping.** Phase 7's brief describes data as
+measured/external/derived/simulated/synthetic. This codebase's existing
+`Provenance` enum (`MEASURED` / `EXTERNAL` / `ESTIMATED` / `PREDICTED` /
+`SIMULATED` / `USER_REPORTED` / `UNKNOWN`, established in Phase 1) already
+covers this without a rename that would touch every existing call site:
+"derived" maps to `ESTIMATED`/`PREDICTED`, and `SIMULATED` covers both
+"no physical referent" simulation output and synthetic test fixtures
+(`sensing/synthetic/SyntheticDatasetGenerator.ts` already documents this).
+Reusing the existing taxonomy rather than introducing a parallel one was a
+deliberate call — see the module docs above for where each maps.
+
+**What Phase 7 deliberately does not include**: no live network-based
+dataset provider (the `RESEARCH_DATASET` type and `UNCONFIGURED` status
+exist for when one is added); no backend/proxy service (Part 18's
+architectural rule); no plugin marketplace, only the `DataSource`/
+`ImportPipeline` extension seam a future provider (a real soil sensor API,
+a university dataset) would implement against; no bulk/streaming import
+(CSV is capped at 50,000 rows — `CsvImport.ts`'s `MAX_CSV_ROWS` — a
+deliberate ceiling, not a silent truncation, since a rejected/truncated
+import is reported, not hidden).
+
 ## Security
 
 Vite bundles any `VITE_`-prefixed environment variable straight into the
@@ -655,8 +782,9 @@ contract the domain layer depends on — nothing in `domain/`, `world/`, or
   WASM asset and a heavier dependency for a need IndexedDB already meets).
   It's async (fine for a 60fps loop), structured, and works fully offline.
   A `weatherCache` object store was added in Phase 3 (schema version 2), a
-  `datasets` store in Phase 5 (schema version 3), and `soilSamples`/
-  `groundSamples`/`cropObservations` stores in Phase 6 (schema version 4) —
+  `datasets` store in Phase 5 (schema version 3), `soilSamples`/
+  `groundSamples`/`cropObservations` stores in Phase 6 (schema version 4),
+  and `dataSources`/`importRecords` stores in Phase 7 (schema version 5) —
   each migration only adds missing stores, verified live to never touch
   existing data.
 - **InMemoryRepository** — a trivial Map-backed implementation used in tests
@@ -738,14 +866,17 @@ src/
                 SpatialStatistics, TemporalAlignment, Coverage, DataGap,
                 MissionDataRequirement, FieldSummary, ImportJob,
                 AssetSecurity, ProcessingStep (lineage); fixtures/ holds
-                the deterministic test-only raster fixture
+                the deterministic test-only raster fixture; Phase 7 added
+                DataSource, PublicDatasetEvaluation, CsvImport,
+                ImportValidation, ImportPipeline, ImportIdentity
   world/        WorldRegistry (referential-integrity index + lookups),
                 demoWorld.ts (the one seeded fixture)
   persistence/  Repository<T> interface, InMemoryRepository,
                 IndexedDbRepository, repositories.ts factory
   ui/           Hud, Minimap, WorldPanel, DataInspector, GeoView,
-                WeatherPanel, AnalysisRegistryPanel, DataCatalogPanel —
-                render domain state/Observations, compute nothing
+                WeatherPanel, AnalysisRegistryPanel, DataCatalogPanel,
+                ImportPanel (Phase 7) — render domain state/Observations,
+                compute nothing
 ```
 
 Data flow, and the boundary that must never be crossed:
@@ -804,18 +935,29 @@ pipeline without the UI changing at all.
    Catalog's new Ground Observations / Sensor Capability Registry
    sections — still no real ground-sensor hardware, no soil data provider,
    and no crop-health scoring of any kind.
-7. First real ML model + first real external dataset — once a genuine
+7. ~~Real agricultural data ingestion + field data platform~~ — this
+   repository, Phase 7: a `DataSource` registry distinguishing what's
+   actually connected from what's evaluated-but-unconfigured, a generic
+   CSV import pipeline (parse → map columns → validate → normalize →
+   dedupe → Observation), a GeoJSON field-boundary import path with
+   explicit CRS rejection, deterministic import identity for idempotent
+   re-imports, an auditable `ImportReport` persisted per run, upload
+   security checks reused from Phase 5's `AssetSecurity`, an evaluated-
+   but-unintegrated public dataset survey, and Data Catalog / Observation
+   Inspector sections surfacing sources and import history — still no
+   live external dataset provider beyond the existing weather pipeline.
+8. First real ML model + first real external dataset — once a genuine
    labeled dataset exists (real or high-fidelity simulated imagery with
    verified labels) and/or a live `DatasetProvider` implementation is
    added, train and register a model against `ModelRegistry`'s contract; a
    real (non-Null-Island) field boundary and CRS pipeline if real field
    data becomes available.
-8. Autonomous missions + AI decision engine — coverage planning, temporal
+9. Autonomous missions + AI decision engine — coverage planning, temporal
    comparison across flights, sensor fusion converted into a validated
    prediction with preserved uncertainty.
-9. Real hardware + community platform — first real flight-controller/sensor
-   (including camera/multispectral/thermal/soil) integration behind the
-   `Sensor`/drone abstractions proven here; open datasets and plugin
-   contributions.
+10. Real hardware + community platform — first real flight-controller/sensor
+    (including camera/multispectral/thermal/soil) integration behind the
+    `Sensor`/drone abstractions proven here; open datasets and plugin
+    contributions.
 
 Phase 7 is not started and requires separate approval before work begins.

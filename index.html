@@ -246,6 +246,10 @@
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
                 <span>Data Catalog</span>
             </button>
+            <button class="ctrl-btn" id="btnImport" title="Import real agricultural data — CSV observations or a GeoJSON field boundary">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>
+                <span>Import Data</span>
+            </button>
             <button class="ctrl-btn" id="btnReset" title="Reset View">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
                 <span>Reset</span>
@@ -302,6 +306,15 @@
             <span class="panel-status deferred">FIELD 01</span>
         </div>
         <div id="dataCatalogContent"></div>
+    </div>
+
+    <!-- Data Import (closed by default) -->
+    <div id="importPanel" class="hidden">
+        <div class="inspector-header">
+            <span>IMPORT AGRICULTURAL DATA</span>
+            <span class="panel-status deferred">MANUAL UPLOAD — NOT LIVE</span>
+        </div>
+        <div id="importContent"></div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

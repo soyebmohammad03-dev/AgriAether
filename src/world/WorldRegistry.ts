@@ -9,6 +9,8 @@ import type { DatasetRecord } from '../data/Dataset';
 import type { SoilSample } from '../soil/SoilSample';
 import type { GroundSample } from '../sensors/GroundSample';
 import type { CropObservation } from '../domain/CropObservation';
+import type { DataSourceRecord } from '../data/DataSource';
+import type { ImportReport } from '../data/ImportPipeline';
 import type { AgriAetherRepositories } from '../persistence/repositories';
 
 /**
@@ -33,12 +35,14 @@ export class WorldRegistry {
   private readonly soilSamples = new Map<string, SoilSample>();
   private readonly groundSamples = new Map<string, GroundSample>();
   private readonly cropObservations = new Map<string, CropObservation>();
+  private readonly dataSources = new Map<string, DataSourceRecord>();
+  private readonly importRecords = new Map<string, ImportReport>();
 
   private constructor(private readonly repositories: AgriAetherRepositories) {}
 
   static async load(repositories: AgriAetherRepositories): Promise<WorldRegistry> {
     const registry = new WorldRegistry(repositories);
-    const [farms, fields, zones, cropCycles, sensors, deployments, events, datasets, soilSamples, groundSamples, cropObservations] = await Promise.all([
+    const [farms, fields, zones, cropCycles, sensors, deployments, events, datasets, soilSamples, groundSamples, cropObservations, dataSources, importRecords] = await Promise.all([
       repositories.farms.list(),
       repositories.fields.list(),
       repositories.zones.list(),
@@ -49,7 +53,9 @@ export class WorldRegistry {
       repositories.datasets.list(),
       repositories.soilSamples.list(),
       repositories.groundSamples.list(),
-      repositories.cropObservations.list()
+      repositories.cropObservations.list(),
+      repositories.dataSources.list(),
+      repositories.importRecords.list()
     ]);
     for (const farm of farms) registry.farms.set(farm.id, farm);
     for (const field of fields) registry.fields.set(field.id, field);
@@ -62,6 +68,8 @@ export class WorldRegistry {
     for (const sample of soilSamples) registry.soilSamples.set(sample.id, sample);
     for (const sample of groundSamples) registry.groundSamples.set(sample.id, sample);
     for (const observation of cropObservations) registry.cropObservations.set(observation.id, observation);
+    for (const source of dataSources) registry.dataSources.set(source.id, source);
+    for (const record of importRecords) registry.importRecords.set(record.id, record);
     return registry;
   }
 
@@ -229,5 +237,31 @@ export class WorldRegistry {
 
   isEmpty(): boolean {
     return this.farms.size === 0;
+  }
+
+  /** Registered once per known source (built-in or discovered) — re-registering the same id overwrites, so calling this idempotently at startup is safe. */
+  async registerDataSource(source: DataSourceRecord): Promise<DataSourceRecord> {
+    this.dataSources.set(source.id, source);
+    await this.repositories.dataSources.save(source);
+    return source;
+  }
+
+  listDataSources(): DataSourceRecord[] {
+    return Array.from(this.dataSources.values());
+  }
+
+  getDataSource(id: string): DataSourceRecord | null {
+    return this.dataSources.get(id) ?? null;
+  }
+
+  /** Persists one import's audit report (Part 2/Part 8) — never mutated after the fact, so the Data Catalog's import history is a true record of what each import actually did. */
+  async recordImport(report: ImportReport): Promise<ImportReport> {
+    this.importRecords.set(report.id, report);
+    await this.repositories.importRecords.save(report);
+    return report;
+  }
+
+  listImportRecords(): ImportReport[] {
+    return Array.from(this.importRecords.values()).sort((a, b) => b.startedAt - a.startedAt);
   }
 }

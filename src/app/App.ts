@@ -33,6 +33,10 @@ import { evaluateMissionDataRequirements } from '../data/MissionDataRequirement'
 import { buildFieldSummary } from '../data/FieldSummary';
 import { SENSOR_CAPABILITY_CATALOG } from '../sensing/SensorCapabilityCatalog';
 import type { SensorKind } from '../domain/SensorRecord';
+import { ImportPanel } from '../ui/ImportPanel';
+import { builtInDataSources, type DataSourceRecord } from '../data/DataSource';
+import { createField } from '../domain/Field';
+import type { CsvImportResult, FieldBoundaryImportResult } from '../data/ImportPipeline';
 
 const CAMERA_BUTTON_IDS: Record<CameraMode, string> = {
   orbit: 'btnOrbit',
@@ -63,6 +67,8 @@ export class App {
   private readonly weatherPanel = new WeatherPanel();
   private readonly analysisRegistryPanel = new AnalysisRegistryPanel();
   private readonly dataCatalogPanel = new DataCatalogPanel();
+  private readonly importPanel: ImportPanel;
+  private readonly importedObservationIds = new Set<string>();
   private readonly observationLog = new ObservationLog();
   private readonly minimap = new Minimap(
     document.getElementById('minimapCanvas') as HTMLCanvasElement,
@@ -84,9 +90,24 @@ export class App {
     private readonly repositories: AgriAetherRepositories,
     private readonly world: WorldRegistry,
     private readonly worldIds: DemoWorldIds,
-    private readonly telemetryGenerator: TelemetryGenerator
+    private readonly telemetryGenerator: TelemetryGenerator,
+    csvSource: DataSourceRecord,
+    geojsonSource: DataSourceRecord,
+    importedObservationIds: string[]
   ) {
     this.weatherService = new WeatherService(new OpenMeteoProvider(), repositories.weatherCache);
+    for (const id of importedObservationIds) this.importedObservationIds.add(id);
+    this.importPanel = new ImportPanel({
+      farmId: this.worldIds.farmId,
+      csvSource,
+      geojsonSource,
+      knownFieldIds: () => new Set(this.world.listFieldsForFarm(this.worldIds.farmId).map((f) => f.id)),
+      knownZoneIds: () => new Set(this.world.listFieldsForFarm(this.worldIds.farmId).flatMap((f) => this.world.listZonesForField(f.id).map((z) => z.id))),
+      knownSensorCapabilities: (sensorId) => this.world.listSensors().find((s) => s.id === sensorId)?.capabilities ?? null,
+      existingObservationIds: () => this.importedObservationIds,
+      onCsvImportComplete: (result) => this.handleCsvImportComplete(result),
+      onFieldBoundaryImportComplete: (result) => this.handleFieldBoundaryImportComplete(result)
+    });
     this.cameraRig.setMode('orbit');
     this.wireControls();
     this.simulation.start();
@@ -108,13 +129,60 @@ export class App {
     setInterval(() => void this.refreshWeather(), WEATHER_REFRESH_INTERVAL_MS);
   }
 
+  /**
+   * Registers the built-in DataSource catalog (Phase 7) exactly once — by
+   * name, not by re-creating a fresh random id every boot, so reloading the
+   * app doesn't pile up duplicate DataSourceRecords in IndexedDB.
+   */
+  private static async ensureBuiltInDataSources(world: WorldRegistry): Promise<Record<string, DataSourceRecord>> {
+    const existingByName = new Map(world.listDataSources().map((s) => [s.name, s]));
+    const result: Record<string, DataSourceRecord> = {};
+    for (const candidate of builtInDataSources()) {
+      result[candidate.name] = existingByName.get(candidate.name) ?? (await world.registerDataSource(candidate));
+    }
+    return result;
+  }
+
   /** Loads/seeds the domain world before the render loop starts — the one async step in an otherwise synchronous app. */
   static async create(): Promise<App> {
     const repositories = createRepositories();
     const world = await WorldRegistry.load(repositories);
     const generator = new TelemetryGenerator();
     const worldIds = await ensureDemoWorld(world, generator);
-    return new App(repositories, world, worldIds, generator);
+    const sourcesByName = await App.ensureBuiltInDataSources(world);
+    const allObservations = await repositories.observations.list();
+    const importedObservationIds = allObservations.filter((o) => o.id.startsWith('obs_import_')).map((o) => o.id);
+    return new App(
+      repositories,
+      world,
+      worldIds,
+      generator,
+      sourcesByName['CSV Agricultural Data Import'],
+      sourcesByName['GeoJSON Field Boundary Import'],
+      importedObservationIds
+    );
+  }
+
+  private handleCsvImportComplete(result: CsvImportResult): void {
+    for (const obs of result.accepted) {
+      this.observationLog.push(obs);
+      this.importedObservationIds.add(obs.id);
+      void this.repositories.observations.save(obs);
+    }
+    void this.world.recordImport(result.report);
+    if (this.dataCatalogPanel) this.renderDataCatalog();
+  }
+
+  private handleFieldBoundaryImportComplete(result: FieldBoundaryImportResult): void {
+    void this.world.recordImport(result.report);
+    if (!result.geoReference) return;
+    const field = createField({
+      farmId: this.worldIds.farmId,
+      name: `Imported Field (${new Date(result.report.startedAt).toLocaleString()})`,
+      geoReference: result.geoReference,
+      areaHectares: result.areaHectares
+    });
+    void this.world.registerField(field).then(() => this.renderDataCatalog());
   }
 
   private buildGeoView(): GeoView | null {
@@ -193,6 +261,11 @@ export class App {
       const open = this.dataCatalogPanel.toggle();
       if (open) this.renderDataCatalog();
       setButtonActive('btnDataCatalog', open);
+    });
+
+    document.getElementById('btnImport')?.addEventListener('click', () => {
+      const open = this.importPanel.toggle();
+      setButtonActive('btnImport', open);
     });
 
     document.getElementById('btnGeoView')?.addEventListener('click', () => {
@@ -308,7 +381,9 @@ export class App {
       soilSamples: this.world.listSoilSamplesForField(field.id),
       groundSamples: this.world.listGroundSamplesForField(field.id),
       cropObservations: this.world.listCropObservationsForField(field.id),
-      sensorRegistry
+      sensorRegistry,
+      dataSources: this.world.listDataSources(),
+      importRecords: this.world.listImportRecords()
     });
   }
 

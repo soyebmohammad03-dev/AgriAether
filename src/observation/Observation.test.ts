@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertValidObservation, createPredictedObservation, createSimulatedObservation, createUnavailableObservation, type Observation } from './Observation';
+import { assertValidObservation, createImportedObservation, createPredictedObservation, createSimulatedObservation, createUnavailableObservation, type Observation } from './Observation';
 
 describe('createSimulatedObservation', () => {
   it('always tags provenance as SIMULATED', () => {
@@ -173,5 +173,52 @@ describe('createPredictedObservation', () => {
     expect(obs.provenance).toBe('PREDICTED');
     expect(obs.source).toBe('model:crop-stress-v1');
     expect(obs.metadata).toMatchObject({ modelVersion: '0.1.0' });
+  });
+});
+
+describe('createImportedObservation', () => {
+  it('requires source to start with "import:"', () => {
+    expect(() =>
+      createImportedObservation({
+        id: 'obs_import_1',
+        type: 'soil.moisture',
+        value: 35.5,
+        unit: 'percent',
+        timestamp: Date.now(),
+        source: 'csv-upload',
+        provenance: 'MEASURED'
+      })
+    ).toThrow(/start with "import:"/);
+  });
+
+  it('accepts an explicit MEASURED provenance with a deterministic id', () => {
+    const obs = createImportedObservation({
+      id: 'obs_import_abc123',
+      type: 'soil.moisture',
+      value: 35.5,
+      unit: 'percent',
+      timestamp: Date.now(),
+      source: 'import:source_1',
+      provenance: 'MEASURED'
+    });
+    expect(obs.id).toBe('obs_import_abc123');
+    expect(obs.provenance).toBe('MEASURED');
+  });
+
+  it('rejects an imported observation claiming SIMULATED provenance', () => {
+    expect(() =>
+      assertValidObservation({
+        id: 'obs_import_1',
+        type: 'soil.moisture',
+        value: 1,
+        unit: null,
+        timestamp: Date.now(),
+        location: null,
+        source: 'import:source_1',
+        provenance: 'SIMULATED',
+        confidence: null,
+        status: 'OK'
+      })
+    ).toThrow(/never be SIMULATED/);
   });
 });

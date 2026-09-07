@@ -56,13 +56,23 @@ export class DataInspector {
         ]
           .filter(Boolean)
           .join(' ') || 'none';
+        const location =
+          obs.location === null
+            ? 'unlocated'
+            : obs.location.frame === 'geodetic'
+              ? `${obs.location.lat.toFixed(5)},${obs.location.lon.toFixed(5)} (WGS84)`
+              : `${obs.location.x.toFixed(1)},${obs.location.y.toFixed(1)},${obs.location.z.toFixed(1)} (sim-local)`;
+        const quality = typeof obs.metadata?.dataQuality === 'string' ? obs.metadata.dataQuality : 'n/a';
         return [
           `<div class="inspector-row">`,
           `<span class="inspector-type">${obs.type}</span>`,
           `<span class="inspector-provenance">${obs.provenance}</span>`,
           `<span>value=${formatValue(obs.value)}${obs.unit ? ' ' + obs.unit : ''}</span>`,
+          `<span>when=${new Date(obs.timestamp).toLocaleTimeString()}</span>`,
+          `<span>where=${location}</span>`,
           `<span>source=${obs.source}</span>`,
           `<span>confidence=${obs.confidence ?? 'n/a'}</span>`,
+          `<span>quality=${quality}</span>`,
           `<span>status=${obs.status}</span>`,
           `<span class="inspector-context">${context}</span>`,
           `</div>`

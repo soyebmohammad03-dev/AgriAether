@@ -107,6 +107,11 @@ const SOURCE_PROVENANCE_RULES: Array<{ matches: (source: string) => boolean; dis
     matches: (s) => s.startsWith('model:'),
     disallowed: ['MEASURED', 'SIMULATED', 'EXTERNAL', 'USER_REPORTED'],
     description: 'a model source can never be MEASURED, SIMULATED, EXTERNAL, or USER_REPORTED — a prediction is not a measurement'
+  },
+  {
+    matches: (s) => s.startsWith('import:'),
+    disallowed: ['SIMULATED'],
+    description: 'an imported record can never be SIMULATED — see data/ImportPipeline.ts, provenance for an import is always declared by the importer (MEASURED/EXTERNAL/USER_REPORTED/UNKNOWN)'
   }
 ];
 
@@ -256,6 +261,55 @@ export function createPredictedObservation<T>(
     missionId: params.missionId ?? null,
     droneId: params.droneId ?? null,
     metadata: { ...(params.metadata ?? {}), modelVersion: params.modelVersion }
+  };
+  assertValidObservation(obs);
+  return obs;
+}
+
+/**
+ * Build an Observation from an external import (Phase 7) — CSV, GeoJSON
+ * attribute data, or any future batch source. Unlike the simulation
+ * factories above, the caller supplies both `id` (deterministic, from
+ * data/ImportIdentity.ts, so a re-import overwrites rather than duplicates)
+ * and `provenance` explicitly: an importer must state whether the data is a
+ * real measurement, a third-party dataset, or a user's manual entry —
+ * never defaulted. `source` must be `import:<dataSourceId>` so the
+ * SOURCE_PROVENANCE_RULES above can enforce it was never claimed SIMULATED.
+ */
+export function createImportedObservation<T>(
+  params: {
+    id: string;
+    type: string;
+    value: T;
+    unit: string | null;
+    timestamp: number;
+    location?: ObservationLocation | null;
+    source: string;
+    provenance: Exclude<Provenance, 'SIMULATED' | 'ESTIMATED' | 'PREDICTED'>;
+    confidence?: number | null;
+  } & ObservationContext
+): Observation<T> {
+  if (!params.source.startsWith('import:')) {
+    throw new Error(`createImportedObservation requires source to start with "import:", got "${params.source}"`);
+  }
+  const obs: Observation<T> = {
+    id: params.id,
+    type: params.type,
+    value: params.value,
+    unit: params.unit,
+    timestamp: params.timestamp,
+    location: params.location ?? null,
+    source: params.source,
+    provenance: params.provenance,
+    confidence: params.confidence ?? null,
+    status: 'OK',
+    farmId: params.farmId ?? null,
+    fieldId: params.fieldId ?? null,
+    zoneId: params.zoneId ?? null,
+    sensorId: params.sensorId ?? null,
+    missionId: params.missionId ?? null,
+    droneId: params.droneId ?? null,
+    metadata: params.metadata ?? null
   };
   assertValidObservation(obs);
   return obs;

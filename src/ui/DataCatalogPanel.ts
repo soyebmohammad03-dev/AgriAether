@@ -6,6 +6,8 @@ import type { SoilSample } from '../soil/SoilSample';
 import type { GroundSample } from '../sensors/GroundSample';
 import type { CropObservation } from '../domain/CropObservation';
 import type { SensorKind } from '../domain/SensorRecord';
+import type { DataSourceRecord } from '../data/DataSource';
+import type { ImportReport } from '../data/ImportPipeline';
 
 export interface SensorRegistryRow {
   kind: SensorKind;
@@ -42,9 +44,11 @@ export class DataCatalogPanel {
     groundSamples: GroundSample[];
     cropObservations: CropObservation[];
     sensorRegistry: SensorRegistryRow[];
+    dataSources: DataSourceRecord[];
+    importRecords: ImportReport[];
   }): void {
     if (!this.content) return;
-    const { summary, gaps, missionRequirements, datasets, soilSamples, groundSamples, cropObservations, sensorRegistry } = params;
+    const { summary, gaps, missionRequirements, datasets, soilSamples, groundSamples, cropObservations, sensorRegistry, dataSources, importRecords } = params;
 
     const coverageRows = Object.entries(summary.coverage.sensorCoverage)
       .map(([category, status]) => `<div class="catalog-kv"><span>${category}</span><span class="${status === 'available' ? 'catalog-ok' : 'catalog-muted'}">${status}</span></div>`)
@@ -95,6 +99,25 @@ export class DataCatalogPanel {
           .join('')
       : '<div class="catalog-muted">No crop observations recorded. No health/stress/disease score is ever fabricated in its place.</div>';
 
+    const sourceRows = dataSources.length
+      ? dataSources
+          .map(
+            (s) =>
+              `<div class="catalog-dataset"><strong>${s.name}</strong> — ${s.type}, nature: ${s.nature}, status: ${s.ingestionStatus}${s.license ? `, license: ${s.license}` : ''}</div>`
+          )
+          .join('')
+      : '<div class="catalog-muted">No data sources registered.</div>';
+
+    const importRows = importRecords.length
+      ? importRecords
+          .slice(0, 10)
+          .map(
+            (r) =>
+              `<div class="catalog-dataset">${new Date(r.startedAt).toLocaleString()} — ${r.kind}: ${r.recordsAccepted} accepted, ${r.recordsQuestionable} questionable, ${r.recordsRejected} rejected, ${r.duplicatesSkipped} duplicates skipped (of ${r.recordsReceived} received)</div>`
+          )
+          .join('')
+      : '<div class="catalog-muted">No imports run yet. Use Import Data to bring in a real CSV or GeoJSON dataset.</div>';
+
     const registryRows = sensorRegistry
       .map(
         (row) =>
@@ -114,6 +137,8 @@ export class DataCatalogPanel {
       `<div class="catalog-section"><h4>Data Gaps</h4>${gapRows}</div>`,
       `<div class="catalog-section"><h4>Mission Data Requirements</h4>${missionRows}</div>`,
       `<div class="catalog-section"><h4>Dataset Catalog</h4>${datasetRows}</div>`,
+      `<div class="catalog-section"><h4>Data Sources</h4>${sourceRows}</div>`,
+      `<div class="catalog-section"><h4>Import History</h4>${importRows}</div>`,
       `<div class="catalog-section"><h4>Ground Observations</h4>${soilRows}${groundRows}${cropRows}</div>`,
       `<div class="catalog-section"><h4>Sensor Capability Registry</h4><div class="catalog-muted">Every sensor kind AgriAether's domain model can represent, cross-checked against what is actually deployed — never a live reading invented for a kind with no hardware.</div>${registryRows}</div>`
     ].join('');
