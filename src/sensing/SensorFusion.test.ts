@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFusionInventory, categorizeSource } from './SensorFusion';
+import { buildFusionInventory, categorizeSource, alignObservationEvidence } from './SensorFusion';
 import type { Observation } from '../observation/Observation';
 
 function obs(overrides: Partial<Observation<number>>): Observation<number> {
@@ -57,5 +57,52 @@ describe('categorizeSource', () => {
     expect(categorizeSource(obs({ type: 'soil.ph', droneId: undefined }))).toBe('soil');
     expect(categorizeSource(obs({ type: 'weather.wind_speed', droneId: undefined }))).toBe('weather');
     expect(categorizeSource(obs({ type: 'unmapped.quantity', droneId: undefined, provenance: 'ESTIMATED' }))).toBe('other');
+  });
+});
+
+describe('alignObservationEvidence', () => {
+  it('picks the latest OK reading per type and reports missing expected types honestly', () => {
+    const bundle = alignObservationEvidence({
+      observations: [
+        obs({ id: 'a', type: 'soil.moisture', fieldId: 'field_1', timestamp: 1000, value: 20 }),
+        obs({ id: 'b', type: 'soil.moisture', fieldId: 'field_1', timestamp: 2000, value: 22 })
+      ],
+      fieldId: 'field_1',
+      windowStartMs: 0,
+      windowEndMs: 3000,
+      now: 3000,
+      expectedTypes: ['soil.moisture', 'weather.air_temperature']
+    });
+    expect(bundle.items).toHaveLength(1);
+    expect(bundle.items[0].observation.id).toBe('b');
+    expect(bundle.missingTypes).toEqual(['weather.air_temperature']);
+    expect(bundle.conflicts).toEqual([]);
+  });
+
+  it('flags disagreeing same-type readings as a conflict instead of averaging them', () => {
+    const bundle = alignObservationEvidence({
+      observations: [
+        obs({ id: 'a', type: 'soil.moisture', fieldId: 'field_1', timestamp: 1000, value: 10, sensorId: 'sensor_1' }),
+        obs({ id: 'b', type: 'soil.moisture', fieldId: 'field_1', timestamp: 1000, value: 30, sensorId: 'sensor_2' })
+      ],
+      fieldId: 'field_1',
+      windowStartMs: 0,
+      windowEndMs: 2000,
+      now: 2000
+    });
+    expect(bundle.conflicts).toHaveLength(1);
+    expect(bundle.conflicts[0].type).toBe('soil.moisture');
+  });
+
+  it('marks an item STALE once its age exceeds staleAfterMs', () => {
+    const bundle = alignObservationEvidence({
+      observations: [obs({ id: 'a', type: 'soil.moisture', fieldId: 'field_1', timestamp: 0, value: 20 })],
+      fieldId: 'field_1',
+      windowStartMs: 0,
+      windowEndMs: 100000,
+      now: 100000,
+      staleAfterMs: 5000
+    });
+    expect(bundle.items[0].freshness).toBe('STALE');
   });
 });

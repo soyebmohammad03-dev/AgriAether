@@ -1,3 +1,4 @@
+import { createId } from '../domain/id';
 import type { Observation } from '../observation/Observation';
 
 /**
@@ -79,5 +80,140 @@ export function buildFusionInventory(observations: ReadonlyArray<Observation<unk
     averageConfidence: confidenceCount > 0 ? confidenceSum / confidenceCount : null,
     countByProvenance,
     countBySourceCategory
+  };
+}
+
+/** How stale an Observation is allowed to get before evidence alignment stops treating it as current. Same order of magnitude as DataGap.ts's STALE_AFTER_MS, kept separate because fusion evidence and coverage gaps are different concerns. */
+const DEFAULT_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Two OK numeric observations of the same type disagree by more than this
+ * fraction of their shared magnitude — a real conflict to surface, not a
+ * value to silently average away. Mirrors TemporalChange.ts's
+ * STABLE_THRESHOLD_FRACTION intent but kept as its own constant since
+ * fusion and temporal-change are different questions (do two sources
+ * agree right now vs did one source change over time).
+ */
+const CONFLICT_THRESHOLD_FRACTION = 0.1;
+
+export type Freshness = 'CURRENT' | 'STALE';
+
+export interface EvidenceItem {
+  type: string;
+  observation: Observation<unknown>;
+  sourceCategory: SourceCategory;
+  ageMs: number;
+  freshness: Freshness;
+}
+
+export interface ObservationConflict {
+  type: string;
+  observationIds: string[];
+  reason: string;
+}
+
+/**
+ * One deterministic bundle of evidence for a field (and optionally zone)
+ * within a time window: the latest OK observation per type, any same-type
+ * disagreements found, and which of the caller's expected types have none
+ * at all. This is evidence alignment, not fusion into a single value — see
+ * the module doc: a future ML model replaces the "how do we combine this"
+ * step, not this step.
+ */
+export interface FusedEvidenceBundle {
+  id: string;
+  fieldId: string;
+  zoneId: string | null;
+  windowStartMs: number;
+  windowEndMs: number;
+  items: EvidenceItem[];
+  conflicts: ObservationConflict[];
+  missingTypes: string[];
+  sourceObservationIds: string[];
+  averageConfidence: number | null;
+}
+
+/**
+ * Aligns observations for one field/zone/window by type: picks the latest
+ * OK reading per type (never invents or interpolates a missing one),
+ * flags same-type readings that disagree beyond CONFLICT_THRESHOLD_FRACTION,
+ * and reports missing/stale honestly instead of masking them.
+ */
+export function alignObservationEvidence(params: {
+  observations: ReadonlyArray<Observation<unknown>>;
+  fieldId: string;
+  zoneId?: string | null;
+  windowStartMs: number;
+  windowEndMs: number;
+  now?: number;
+  staleAfterMs?: number;
+  expectedTypes?: readonly string[];
+}): FusedEvidenceBundle {
+  const now = params.now ?? Date.now();
+  const staleAfterMs = params.staleAfterMs ?? DEFAULT_STALE_AFTER_MS;
+  const zoneId = params.zoneId ?? null;
+
+  const inWindow = params.observations.filter(
+    (o) =>
+      o.fieldId === params.fieldId &&
+      (zoneId === null || o.zoneId === zoneId) &&
+      o.timestamp >= params.windowStartMs &&
+      o.timestamp <= params.windowEndMs
+  );
+
+  const byType = new Map<string, Observation<unknown>[]>();
+  for (const obs of inWindow) {
+    const list = byType.get(obs.type) ?? [];
+    list.push(obs);
+    byType.set(obs.type, list);
+  }
+
+  const items: EvidenceItem[] = [];
+  const conflicts: ObservationConflict[] = [];
+  for (const [type, group] of byType) {
+    const okGroup = group.filter((o) => o.status === 'OK');
+    if (okGroup.length === 0) continue;
+
+    const numericValues = okGroup.filter((o): o is Observation<number> => typeof o.value === 'number');
+    if (numericValues.length > 1) {
+      const values = numericValues.map((o) => o.value as number);
+      const scale = Math.max(...values.map((v) => Math.abs(v)), 1e-9);
+      const spread = Math.max(...values) - Math.min(...values);
+      if (spread / scale > CONFLICT_THRESHOLD_FRACTION) {
+        conflicts.push({
+          type,
+          observationIds: numericValues.map((o) => o.id),
+          reason: `${numericValues.length} "${type}" readings in this window disagree by more than ${(CONFLICT_THRESHOLD_FRACTION * 100).toFixed(0)}%.`
+        });
+      }
+    }
+
+    const latest = okGroup.reduce((a, b) => (b.timestamp > a.timestamp ? b : a));
+    const ageMs = now - latest.timestamp;
+    items.push({
+      type,
+      observation: latest,
+      sourceCategory: categorizeSource(latest),
+      ageMs,
+      freshness: ageMs > staleAfterMs ? 'STALE' : 'CURRENT'
+    });
+  }
+
+  const presentTypes = new Set(items.map((i) => i.type));
+  const missingTypes = (params.expectedTypes ?? []).filter((t) => !presentTypes.has(t));
+
+  const confidences = items.map((i) => i.observation.confidence).filter((c): c is number => c !== null);
+
+  return {
+    id: createId('evidence_bundle'),
+    fieldId: params.fieldId,
+    zoneId,
+    windowStartMs: params.windowStartMs,
+    windowEndMs: params.windowEndMs,
+    items,
+    conflicts,
+    missingTypes,
+    sourceObservationIds: items.map((i) => i.observation.id),
+    averageConfidence: confidences.length > 0 ? confidences.reduce((a, b) => a + b, 0) / confidences.length : null
   };
 }

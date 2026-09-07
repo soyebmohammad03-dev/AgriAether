@@ -46,6 +46,9 @@ import { summarizeFieldCropStatus } from '../domain/CropStatusChange';
 import { assessCropStress } from '../sensing/CropStressSignal';
 import { assessDatasetReadiness } from '../sensing/ModelRegistry';
 import { summarizeSoilSampleQuality } from '../soil/SoilQuality';
+import { buildFieldTwin } from '../twin/FieldTwin';
+import { KnowledgeGraph } from '../graph/KnowledgeGraph';
+import { TwinPanel } from '../ui/TwinPanel';
 
 /** Days of historical weather fetched once at startup — enough for a real Growing Degree Days window without an oversized request. */
 const WEATHER_HISTORY_DAYS = 14;
@@ -81,6 +84,7 @@ export class App {
   private readonly weatherPanel = new WeatherPanel();
   private readonly analysisRegistryPanel = new AnalysisRegistryPanel();
   private readonly dataCatalogPanel = new DataCatalogPanel();
+  private readonly twinPanel = new TwinPanel();
   private readonly importPanel: ImportPanel;
   private readonly importedObservationIds = new Set<string>();
   private readonly observationLog = new ObservationLog();
@@ -286,6 +290,12 @@ export class App {
       setButtonActive('btnImport', open);
     });
 
+    document.getElementById('btnTwin')?.addEventListener('click', () => {
+      const open = this.twinPanel.toggle();
+      if (open) this.renderTwin();
+      setButtonActive('btnTwin', open);
+    });
+
     document.getElementById('btnGeoView')?.addEventListener('click', () => {
       this.geoViewOpen = !this.geoViewOpen;
       document.getElementById('geoView')?.classList.toggle('hidden', !this.geoViewOpen);
@@ -426,6 +436,37 @@ export class App {
       cropStress,
       modelReadiness: assessDatasetReadiness('CROP_STRESS_CLASSIFICATION', 0)
     });
+  }
+
+  /** Assembles the Digital Twin + knowledge-graph evidence view from the same real data renderDataCatalog uses — no separate data source, no fabricated score. */
+  private renderTwin(): void {
+    const field = this.world.getField(this.worldIds.fieldId);
+    if (!field) return;
+
+    const recentObservations = this.observationLog.recent(200);
+    const coverage = computeFieldCoverage({
+      fieldId: field.id,
+      availableSensorKinds: this.world.listSensors().map((s) => s.kind),
+      observations: recentObservations,
+      weatherAvailable: this.latestWeather !== null
+    });
+
+    const twin = buildFieldTwin({
+      field,
+      zones: this.world.listZonesForField(field.id),
+      activeSensors: this.world.listSensors(),
+      recentObservations,
+      soilSamples: this.world.listSoilSamplesForField(field.id),
+      cropObservations: this.world.listCropObservationsForField(field.id),
+      dailyWeatherRecords: this.dailyWeatherRecords,
+      coverage,
+      dataGaps: detectDataGaps(coverage)
+    });
+
+    const graph = KnowledgeGraph.build(this.world, recentObservations);
+    const evidenceNodes = graph.evidenceFor(`Field:${field.id}`);
+
+    this.twinPanel.render(twin, evidenceNodes);
   }
 
   private refreshSensorHealth(): void {

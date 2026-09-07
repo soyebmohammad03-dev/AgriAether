@@ -234,6 +234,10 @@ export class WorldRegistry {
     return Array.from(this.zones.values()).filter((z) => z.fieldId === fieldId);
   }
 
+  listCropCyclesForField(fieldId: string): CropCycle[] {
+    return Array.from(this.cropCycles.values()).filter((c) => c.fieldId === fieldId);
+  }
+
   listSensors(): SensorRecord[] {
     return Array.from(this.sensors.values());
   }
