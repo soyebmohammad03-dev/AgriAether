@@ -144,6 +144,10 @@ export class WorldRegistry {
     return event;
   }
 
+  listEventsForField(fieldId: string): AgriculturalEvent[] {
+    return Array.from(this.agriculturalEvents.values()).filter((e) => e.fieldId === fieldId);
+  }
+
   async registerDataset(dataset: DatasetRecord): Promise<DatasetRecord> {
     if (dataset.fieldId && !this.fields.has(dataset.fieldId)) {
       throw new Error(`Dataset "${dataset.name}" references unknown field "${dataset.fieldId}"`);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assessDatasetReadiness, createModelRecord, PLANNED_MODELS } from './ModelRegistry';
+import { assessDatasetReadiness, createModelRecord, createPredictionRecord, PLANNED_MODELS } from './ModelRegistry';
 
 describe('ModelRegistry', () => {
   it('every planned model is NOT_DEPLOYED — no fake model is presented as production-ready', () => {
@@ -39,7 +39,24 @@ describe('ModelRegistry', () => {
     ).toThrow(/training dataset/);
   });
 
-  it('accepts a DEPLOYED model that has both metrics and a dataset reference', () => {
+  it('rejects a model claiming DEPLOYED without a feature schema, dataset version, or train/eval timestamps', () => {
+    expect(() =>
+      createModelRecord({
+        name: 'Untested Model',
+        version: '1.0.0',
+        task: 'CROP_STRESS_CLASSIFICATION',
+        inputRequirements: 'x',
+        outputType: 'y',
+        evaluationMetrics: { accuracy: 0.9 },
+        trainingDatasetRef: 'dataset://example',
+        datasetVersion: 'v1',
+        deploymentStatus: 'DEPLOYED',
+        limitations: 'none documented'
+      })
+    ).toThrow(/feature schema/);
+  });
+
+  it('accepts a DEPLOYED model that has metrics, dataset provenance, a feature schema, and train/eval timestamps', () => {
     expect(() =>
       createModelRecord({
         name: 'Fully Evaluated Model',
@@ -47,12 +64,26 @@ describe('ModelRegistry', () => {
         task: 'CROP_STRESS_CLASSIFICATION',
         inputRequirements: 'x',
         outputType: 'y',
+        featureSchema: ['soil.moisture'],
         evaluationMetrics: { accuracy: 0.9 },
         trainingDatasetRef: 'dataset://example',
+        datasetVersion: 'v1',
+        trainedAt: 1000,
+        evaluatedAt: 2000,
         deploymentStatus: 'DEPLOYED',
         limitations: 'validated only on the referenced dataset'
       })
     ).not.toThrow();
+  });
+});
+
+describe('createPredictionRecord', () => {
+  it('records NOT_AVAILABLE with a reason rather than fabricating a value for a NOT_DEPLOYED model', () => {
+    const model = PLANNED_MODELS.find((m) => m.task === 'YIELD_ESTIMATION')!;
+    const prediction = createPredictionRecord({ model, fieldId: 'f', status: 'NOT_AVAILABLE', reason: 'model not deployed' });
+    expect(prediction.status).toBe('NOT_AVAILABLE');
+    expect(prediction.value).toBeNull();
+    expect(prediction.modelId).toBe(model.id);
   });
 });
 

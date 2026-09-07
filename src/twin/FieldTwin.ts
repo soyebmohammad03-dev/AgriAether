@@ -7,12 +7,18 @@ import type { CropObservation } from '../domain/CropObservation';
 import type { DailyWeatherRecord } from '../weather/DailyWeatherRecord';
 import type { FieldCoverageReport } from '../data/Coverage';
 import type { DataGap } from '../data/DataGap';
+import type { AgriculturalEvent } from '../domain/AgriculturalEvent';
 import { summarizeSoilSampleQuality, type SoilSampleQualitySummary } from '../soil/SoilQuality';
 import { summarizeFieldCropStatus, type FieldCropStatusSummary } from '../domain/CropStatusChange';
 import { summarizeWeatherWindow, type WeatherWindowSummary } from '../weather/WeatherIntelligence';
 import { alignObservationEvidence, type FusedEvidenceBundle } from '../sensing/SensorFusion';
 import { trendDirection, type TrendResult } from '../temporal/TemporalIntelligence';
 import { assessDiseasePestRisk, type DiseasePestAssessment } from '../sensing/DiseasePestSignal';
+import { assessCropStress, type CropStressAssessment } from '../sensing/CropStressSignal';
+import { assessIrrigationNeed, type IrrigationAssessment } from '../irrigation/IrrigationIntelligence';
+import { summarizeNutrientEvidence, type NutrientEvidenceSummary } from '../soil/NutrientIntelligence';
+import { generateRecommendations, type Recommendation } from '../sensing/RecommendationEngine';
+import { evaluateFieldOptimization, type FieldOptimizationResult } from '../sensing/FieldOptimization';
 
 /** Observation types tracked for recent-trend reporting — the small set this codebase can currently produce a numeric time series for. Extend as new sensor kinds land; never invent a type that has no producer. */
 export const TWIN_TRACKED_TYPES: readonly string[] = [
@@ -47,6 +53,11 @@ export interface FieldTwinSnapshot {
   coverage: FieldCoverageReport;
   dataGaps: DataGap[];
   diseasePestRisk: DiseasePestAssessment;
+  cropStress: CropStressAssessment;
+  irrigation: IrrigationAssessment;
+  nutrient: NutrientEvidenceSummary;
+  recommendations: Recommendation[];
+  fieldOptimization: FieldOptimizationResult;
 }
 
 export function buildFieldTwin(params: {
@@ -59,6 +70,7 @@ export function buildFieldTwin(params: {
   dailyWeatherRecords: DailyWeatherRecord[];
   coverage: FieldCoverageReport;
   dataGaps: DataGap[];
+  recentEvents?: AgriculturalEvent[];
   now?: number;
   lookbackMs?: number;
   trackedTypes?: readonly string[];
@@ -109,6 +121,41 @@ export function buildFieldTwin(params: {
     hasCropObservation: params.cropObservations.length > 0
   });
 
+  const latestDailyWeather = params.dailyWeatherRecords.length > 0 ? params.dailyWeatherRecords[params.dailyWeatherRecords.length - 1] : null;
+  const cropStress = assessCropStress({
+    fieldId: params.field.id,
+    vegetationIndex: latestVegetation ? { id: latestVegetation.id, type: latestVegetation.type, value: latestVegetation.value as number } : null,
+    soilMoistureStatus: soilState === 'INSUFFICIENT_DATA' ? null : soilState.moistureStatus,
+    soilEcStatus: soilState === 'INSUFFICIENT_DATA' ? null : soilState.ecStatus,
+    soilSampleId: latestSoilSample?.id ?? null,
+    recentTMaxC: latestDailyWeather?.tMaxC ?? null,
+    weatherObservationId: latestDailyWeather?.id ?? null,
+    hasCropObservation: params.cropObservations.length > 0
+  });
+
+  const irrigation = assessIrrigationNeed({
+    fieldId: params.field.id,
+    moistureStatus: soilState === 'INSUFFICIENT_DATA' ? null : soilState.moistureStatus,
+    moistureSampleId: latestSoilSample?.id ?? null,
+    observations: params.recentObservations as ReadonlyArray<Observation<number>>,
+    recentRainfallMm: weatherState === 'INSUFFICIENT_DATA' ? null : weatherState.precipitationTotalMm,
+    recentEvents: params.recentEvents ?? [],
+    now,
+    lookbackMs
+  });
+
+  const nutrient = summarizeNutrientEvidence({
+    fieldId: params.field.id,
+    latestSample: latestSoilSample,
+    observations: params.recentObservations as ReadonlyArray<Observation<number>>,
+    now
+  });
+
+  const recommendations = generateRecommendations({ fieldId: params.field.id, irrigation, nutrient, cropStress, diseasePestRisk });
+
+  const hasAnyEvidence = soilState !== 'INSUFFICIENT_DATA' || weatherState !== 'INSUFFICIENT_DATA' || params.cropObservations.length > 0 || vegetationEvidence.length > 0;
+  const fieldOptimization = evaluateFieldOptimization({ fieldId: params.field.id, hasAnyEvidence, recommendations });
+
   return {
     fieldId: params.field.id,
     fieldName: params.field.name,
@@ -123,6 +170,11 @@ export function buildFieldTwin(params: {
     evidence,
     coverage: params.coverage,
     dataGaps: params.dataGaps,
-    diseasePestRisk
+    diseasePestRisk,
+    cropStress,
+    irrigation,
+    nutrient,
+    recommendations,
+    fieldOptimization
   };
 }

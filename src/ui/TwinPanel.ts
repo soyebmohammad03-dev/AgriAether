@@ -1,5 +1,6 @@
 import type { FieldTwinSnapshot } from '../twin/FieldTwin';
 import type { GraphNode } from '../graph/KnowledgeGraph';
+import type { DatasetReadinessCheck } from '../sensing/ModelRegistry';
 
 function fmtValue(v: unknown): string {
   if (v === null || v === undefined) return 'n/a';
@@ -25,7 +26,7 @@ export class TwinPanel {
     return this.open;
   }
 
-  render(twin: FieldTwinSnapshot, evidenceNodes: GraphNode[]): void {
+  render(twin: FieldTwinSnapshot, evidenceNodes: GraphNode[], modelReadiness: DatasetReadinessCheck[] = []): void {
     if (!this.content) return;
 
     const soilRows =
@@ -91,6 +92,44 @@ export class TwinPanel {
       ? `<div class="catalog-muted">Missing evidence: ${twin.diseasePestRisk.missingEvidence.join(', ')}</div>`
       : '';
 
+    const irrigationRows = [
+      twin.irrigation.moistureStatus ? `<div class="catalog-kv"><span>Moisture status</span><span>${twin.irrigation.moistureStatus}</span></div>` : '',
+      `<div class="catalog-kv"><span>Recent rainfall</span><span>${fmtValue(twin.irrigation.recentRainfallMm)}${twin.irrigation.recentRainfallMm !== null ? 'mm' : ''}</span></div>`,
+      `<div class="catalog-kv"><span>Recent irrigation events</span><span>${twin.irrigation.recentIrrigationEvents.length}</span></div>`,
+      `<div class="catalog-kv"><span>Need status</span><span>${twin.irrigation.needStatus}</span></div>`,
+      ...twin.irrigation.reasons.map((r) => `<div class="catalog-gap">${r}</div>`),
+      twin.irrigation.missingEvidence.length ? `<div class="catalog-muted">Missing evidence: ${twin.irrigation.missingEvidence.join(', ')}</div>` : ''
+    ].join('');
+
+    const nutrientRow = (label: string, reading: typeof twin.nutrient.nitrogen) =>
+      reading
+        ? `<div class="catalog-kv"><span>${label}</span><span>${reading.value.toFixed(1)}ppm — ${reading.status}</span></div>`
+        : `<div class="catalog-muted">${label}: missing</div>`;
+    const nutrientRows = [
+      nutrientRow('Nitrogen', twin.nutrient.nitrogen),
+      nutrientRow('Phosphorus', twin.nutrient.phosphorus),
+      nutrientRow('Potassium', twin.nutrient.potassium)
+    ].join('');
+
+    const recommendationRows = twin.recommendations.length
+      ? twin.recommendations
+          .map(
+            (r) =>
+              `<div class="catalog-gap"><strong>${r.category}</strong> (${r.status}${r.urgency ? `, ${r.urgency}` : ''}): ${r.proposedAction}${
+                r.missingEvidence.length ? ` — missing: ${r.missingEvidence.join(', ')}` : ''
+              }</div>`
+          )
+          .join('')
+      : '<div class="catalog-muted">No recommendations — insufficient evidence or nothing fired.</div>';
+
+    const optimizationRows = twin.fieldOptimization.triggers.map((t) => `<div class="catalog-kv"><span></span><span>${t}</span></div>`).join('');
+
+    const modelReadinessRows = modelReadiness.length
+      ? modelReadiness
+          .map((m) => `<div class="catalog-kv"><span>${m.task}</span><span class="${m.status === 'READY' ? 'catalog-ok' : 'catalog-gap'}">${m.status} (${m.labeledSampleCount}/${m.minLabeledSamples} labeled)</span></div>`)
+          .join('')
+      : '';
+
     const graphRows = evidenceNodes.length
       ? evidenceNodes.slice(0, 20).map((n) => `<div class="catalog-dataset">${n.type}: ${n.label}${n.timestamp ? ` @ ${new Date(n.timestamp).toLocaleTimeString()}` : ''}</div>`).join('')
       : '<div class="catalog-muted">No graph-linked observation evidence found for this field yet.</div>';
@@ -107,6 +146,11 @@ export class TwinPanel {
       `<div class="catalog-section"><h4>Recent Trends (7d, measured-vs-measured, never modeled)</h4>${trendRows}</div>`,
       `<div class="catalog-section"><h4>Fused Evidence — Field Window</h4>${evidenceItemRows}${conflictRows}${missingRows}</div>`,
       `<div class="catalog-section"><h4>Disease / Pest Risk Factors (${twin.diseasePestRisk.status}, screen only — never a diagnosis)</h4>${diseasePestRows}${diseasePestMissingRow}</div>`,
+      `<div class="catalog-section"><h4>Irrigation Status</h4>${irrigationRows}</div>`,
+      `<div class="catalog-section"><h4>Nutrient Evidence (bands only, never a fertility score)</h4>${nutrientRows}</div>`,
+      `<div class="catalog-section"><h4>Field Optimization — ${twin.fieldOptimization.status}</h4>${optimizationRows}</div>`,
+      `<div class="catalog-section"><h4>Recommendations</h4>${recommendationRows}</div>`,
+      modelReadinessRows ? `<div class="catalog-section"><h4>Model Readiness</h4>${modelReadinessRows}</div>` : '',
       `<div class="catalog-section"><h4>Knowledge Graph — Observation Evidence</h4>${graphRows}</div>`
     ].join('');
   }

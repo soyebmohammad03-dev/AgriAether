@@ -5,6 +5,7 @@ export type AgriculturalEventType =
   | 'PLANTING'
   | 'HARVEST'
   | 'TREATMENT'
+  | 'IRRIGATION'
   | 'INSPECTION'
   | 'MISSION_STARTED'
   | 'MISSION_COMPLETED'

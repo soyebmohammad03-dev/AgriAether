@@ -460,7 +460,8 @@ export class App {
       cropObservations: this.world.listCropObservationsForField(field.id),
       dailyWeatherRecords: this.dailyWeatherRecords,
       coverage,
-      dataGaps: detectDataGaps(coverage)
+      dataGaps: detectDataGaps(coverage),
+      recentEvents: this.world.listEventsForField(field.id)
     });
 
     const graph = KnowledgeGraph.build(this.world, recentObservations, [
@@ -471,11 +472,27 @@ export class App {
         zoneId: twin.diseasePestRisk.zoneId,
         computedAt: twin.diseasePestRisk.computedAt,
         supportingObservationIds: twin.diseasePestRisk.riskFactors.flatMap((f) => f.supportingObservationIds)
-      }
+      },
+      ...twin.recommendations.map((r) => ({
+        id: r.id,
+        type: `recommendation.${r.category.toLowerCase()}`,
+        fieldId: r.fieldId,
+        zoneId: r.zoneId,
+        computedAt: r.timestamp,
+        supportingObservationIds: r.evidenceObservationIds
+      }))
     ]);
     const evidenceNodes = graph.evidenceFor(`Field:${field.id}`);
 
-    this.twinPanel.render(twin, evidenceNodes);
+    const modelReadiness = [
+      assessDatasetReadiness('CROP_STRESS_CLASSIFICATION', 0),
+      assessDatasetReadiness('DISEASE_CLASSIFICATION', 0),
+      assessDatasetReadiness('YIELD_ESTIMATION', 0),
+      assessDatasetReadiness('IRRIGATION_DEMAND', 0),
+      assessDatasetReadiness('NUTRIENT_STATUS', 0)
+    ];
+
+    this.twinPanel.render(twin, evidenceNodes, modelReadiness);
   }
 
   private refreshSensorHealth(): void {

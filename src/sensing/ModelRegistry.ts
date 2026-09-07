@@ -1,6 +1,12 @@
 import { createId } from '../domain/id';
 
-export type ModelTask = 'CROP_SEGMENTATION' | 'CROP_STRESS_CLASSIFICATION' | 'DISEASE_CLASSIFICATION' | 'YIELD_ESTIMATION';
+export type ModelTask =
+  | 'CROP_SEGMENTATION'
+  | 'CROP_STRESS_CLASSIFICATION'
+  | 'DISEASE_CLASSIFICATION'
+  | 'YIELD_ESTIMATION'
+  | 'IRRIGATION_DEMAND'
+  | 'NUTRIENT_STATUS';
 export type ModelDeploymentStatus = 'NOT_DEPLOYED' | 'STAGED' | 'DEPLOYED';
 
 /**
@@ -20,19 +26,36 @@ export interface ModelRecord {
   task: ModelTask;
   inputRequirements: string;
   outputType: string;
+  /** Observation/field types the model consumes — the contract's feature list, never inferred at inference time. */
+  featureSchema: string[];
   trainingDatasetRef: string | null;
+  datasetVersion: string | null;
+  trainedAt: number | null;
+  evaluatedAt: number | null;
   evaluationMetrics: Record<string, number> | null;
   deploymentStatus: ModelDeploymentStatus;
   limitations: string;
   confidenceCalibration: string | null;
 }
 
+/** Minimum evaluation metrics a DEPLOYED model must report — deliberately conservative, not a statistical guarantee. */
+const MIN_DEPLOYABLE_METRIC_COUNT = 1;
+
 export function assertModelRecordValid(model: ModelRecord): void {
-  if (model.deploymentStatus === 'DEPLOYED' && (!model.evaluationMetrics || Object.keys(model.evaluationMetrics).length === 0)) {
+  if (model.deploymentStatus === 'DEPLOYED' && (!model.evaluationMetrics || Object.keys(model.evaluationMetrics).length < MIN_DEPLOYABLE_METRIC_COUNT)) {
     throw new Error(`Model "${model.id}" cannot be DEPLOYED without evaluation metrics`);
   }
   if (model.deploymentStatus === 'DEPLOYED' && !model.trainingDatasetRef) {
     throw new Error(`Model "${model.id}" cannot be DEPLOYED without a training dataset reference`);
+  }
+  if (model.deploymentStatus === 'DEPLOYED' && !model.datasetVersion) {
+    throw new Error(`Model "${model.id}" cannot be DEPLOYED without a dataset version`);
+  }
+  if (model.deploymentStatus === 'DEPLOYED' && model.featureSchema.length === 0) {
+    throw new Error(`Model "${model.id}" cannot be DEPLOYED without a declared feature schema`);
+  }
+  if (model.deploymentStatus === 'DEPLOYED' && (model.trainedAt === null || model.evaluatedAt === null)) {
+    throw new Error(`Model "${model.id}" cannot be DEPLOYED without recorded training/evaluation timestamps`);
   }
 }
 
@@ -42,7 +65,11 @@ export function createModelRecord(params: {
   task: ModelTask;
   inputRequirements: string;
   outputType: string;
+  featureSchema?: string[];
   trainingDatasetRef?: string | null;
+  datasetVersion?: string | null;
+  trainedAt?: number | null;
+  evaluatedAt?: number | null;
   evaluationMetrics?: Record<string, number> | null;
   deploymentStatus?: ModelDeploymentStatus;
   limitations: string;
@@ -55,7 +82,11 @@ export function createModelRecord(params: {
     task: params.task,
     inputRequirements: params.inputRequirements,
     outputType: params.outputType,
+    featureSchema: params.featureSchema ?? [],
     trainingDatasetRef: params.trainingDatasetRef ?? null,
+    datasetVersion: params.datasetVersion ?? null,
+    trainedAt: params.trainedAt ?? null,
+    evaluatedAt: params.evaluatedAt ?? null,
     evaluationMetrics: params.evaluationMetrics ?? null,
     deploymentStatus: params.deploymentStatus ?? 'NOT_DEPLOYED',
     limitations: params.limitations,
@@ -63,6 +94,52 @@ export function createModelRecord(params: {
   };
   assertModelRecordValid(model);
   return model;
+}
+
+/**
+ * Provenance record for one prediction request — logged whether or not a
+ * prediction was actually produced, so "why didn't this field get a yield
+ * number" is always answerable from data already on hand.
+ */
+export interface PredictionRecord {
+  id: string;
+  modelId: string;
+  modelVersion: string;
+  task: ModelTask;
+  fieldId: string;
+  zoneId: string | null;
+  status: 'PREDICTED' | 'NOT_AVAILABLE';
+  value: number | null;
+  confidence: number | null;
+  reason: string | null;
+  inputObservationIds: string[];
+  requestedAt: number;
+}
+
+export function createPredictionRecord(params: {
+  model: ModelRecord;
+  fieldId: string;
+  zoneId?: string | null;
+  status: 'PREDICTED' | 'NOT_AVAILABLE';
+  value?: number | null;
+  confidence?: number | null;
+  reason?: string | null;
+  inputObservationIds?: string[];
+}): PredictionRecord {
+  return {
+    id: createId('prediction'),
+    modelId: params.model.id,
+    modelVersion: params.model.version,
+    task: params.model.task,
+    fieldId: params.fieldId,
+    zoneId: params.zoneId ?? null,
+    status: params.status,
+    value: params.value ?? null,
+    confidence: params.confidence ?? null,
+    reason: params.reason ?? null,
+    inputObservationIds: params.inputObservationIds ?? [],
+    requestedAt: Date.now()
+  };
 }
 
 /**
@@ -113,6 +190,7 @@ export const PLANNED_MODELS: ModelRecord[] = [
     task: 'CROP_SEGMENTATION',
     inputRequirements: 'RGB or multispectral orthomosaic tiles with known ground sample distance',
     outputType: 'Per-pixel crop/non-crop mask',
+    featureSchema: ['imagery.rgb', 'imagery.multispectral'],
     limitations: 'No training dataset exists in this repository. Requires labeled imagery from a real or high-fidelity simulated field before training can begin.'
   }),
   createModelRecord({
@@ -121,6 +199,7 @@ export const PLANNED_MODELS: ModelRecord[] = [
     task: 'CROP_STRESS_CLASSIFICATION',
     inputRequirements: 'Multispectral vegetation indices + thermal features + soil moisture, temporally aligned',
     outputType: 'Stress class with confidence',
+    featureSchema: ['vegetation_index.ndvi', 'soil.moisture', 'thermal.surface_temperature'],
     limitations: 'No labeled ground-truth stress dataset exists. Requires paired imagery + agronomist-verified stress labels.'
   }),
   createModelRecord({
@@ -129,7 +208,8 @@ export const PLANNED_MODELS: ModelRecord[] = [
     task: 'DISEASE_CLASSIFICATION',
     inputRequirements: 'High-resolution RGB imagery of individual plants/leaves',
     outputType: 'Disease class with confidence',
-    limitations: 'No disease-labeled dataset exists. This is explicitly NOT implemented — see the Phase 4 scientific-honesty constraints in the README.'
+    featureSchema: ['imagery.rgb'],
+    limitations: 'No disease-labeled dataset exists. This is explicitly NOT implemented — see the Phase 4 scientific-honesty constraints in the README. DiseasePestSignal.ts is a rule-based risk-factor screen, not this model.'
   }),
   createModelRecord({
     name: 'Yield Estimation (planned)',
@@ -137,6 +217,25 @@ export const PLANNED_MODELS: ModelRecord[] = [
     task: 'YIELD_ESTIMATION',
     inputRequirements: 'Multi-temporal vegetation indices across a full growing season + known crop type/planting date',
     outputType: 'Estimated yield with a prediction interval',
+    featureSchema: ['vegetation_index.ndvi', 'domain.crop_cycle'],
     limitations: 'No historical yield ground truth exists in this repository, and no CropCycle in the seeded demo world has a known crop type or planting date.'
+  }),
+  createModelRecord({
+    name: 'Irrigation Demand Prediction (planned)',
+    version: '0.0.0-unimplemented',
+    task: 'IRRIGATION_DEMAND',
+    inputRequirements: 'Soil moisture time series + rainfall + crop growth stage + evapotranspiration parameters',
+    outputType: 'Predicted water demand (volume/area) over a horizon',
+    featureSchema: ['soil.moisture', 'weather.daily_precipitation', 'weather.daily_temp_max', 'domain.crop_cycle'],
+    limitations: 'No calibrated evapotranspiration/crop-coefficient model exists in this repository. IrrigationIntelligence.ts provides a rule-based need screen, never a litres/hectare figure.'
+  }),
+  createModelRecord({
+    name: 'Nutrient Status Prediction (planned)',
+    version: '0.0.0-unimplemented',
+    task: 'NUTRIENT_STATUS',
+    inputRequirements: 'Soil N/P/K time series + crop type + growth stage + regional calibration curve',
+    outputType: 'Predicted nutrient sufficiency class',
+    featureSchema: ['soil.nitrogen', 'soil.phosphorus', 'soil.potassium', 'domain.crop_cycle'],
+    limitations: 'No regionally-calibrated sufficiency curve exists in this repository. NutrientIntelligence.ts reports measured completeness/status only, never a fertilizer rate.'
   })
 ];
