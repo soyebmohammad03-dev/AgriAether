@@ -948,6 +948,26 @@ body {
     display: none;
 }
 
+/* ===== RESEARCH / EXPLAINABILITY ===== */
+#researchPanel {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: 290px;
+    max-height: 320px;
+    overflow-y: auto;
+    z-index: 62;
+    background: var(--bg-glass);
+    backdrop-filter: blur(var(--blur));
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+}
+
+#researchPanel.hidden {
+    display: none;
+}
+
 .lang-btn {
     background: var(--bg-glass);
     border: 1px solid var(--border-glass);

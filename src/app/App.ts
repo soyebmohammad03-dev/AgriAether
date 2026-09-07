@@ -59,6 +59,12 @@ import { buildFarmerOverview } from '../farmer/FarmerInsights';
 import { tasksFromRecommendations, transitionTask, type FarmTask, type TaskStatus } from '../farmer/Task';
 import { deriveSyncStatus } from '../offline/OfflineSync';
 import type { LanguageCode } from '../i18n/i18n';
+import { ResearchPanel } from '../ui/ResearchPanel';
+import { explainRecommendation, explainFieldOptimization } from '../explainability/Explanation';
+import { buildDecisionTrace } from '../explainability/DecisionTrace';
+import { runIrrigationWhatIf } from '../research/Experiment';
+import { buildResearchCatalog } from '../research/ResearchCatalog';
+import { PLANNED_MODELS } from '../sensing/ModelRegistry';
 
 /** Days of historical weather fetched once at startup — enough for a real Growing Degree Days window without an oversized request. */
 const WEATHER_HISTORY_DAYS = 14;
@@ -97,6 +103,7 @@ export class App {
   private readonly twinPanel = new TwinPanel();
   private readonly operationsPanel = new OperationsPanel();
   private readonly farmerPanel = new FarmerPanel();
+  private readonly researchPanel = new ResearchPanel();
   private tasks: FarmTask[] = [];
   private readonly knownTaskProvenance = new Set<string>();
   private language: LanguageCode = 'en';
@@ -334,6 +341,12 @@ export class App {
       const open = this.farmerPanel.toggle();
       if (open) this.renderFarmer();
       setButtonActive('btnFarmer', open);
+    });
+
+    document.getElementById('btnResearch')?.addEventListener('click', () => {
+      const open = this.researchPanel.toggle();
+      if (open) this.renderResearch();
+      setButtonActive('btnResearch', open);
     });
 
     document.getElementById('btnGeoView')?.addEventListener('click', () => {
@@ -638,6 +651,59 @@ export class App {
       // Stale button click against a task whose status already moved on — ignore rather than crash the panel.
     }
     this.renderFarmer();
+  }
+
+  /**
+   * The research/explainability view: picks the field's top actionable
+   * recommendation (falling back to the field-optimization result) and
+   * explains it, traces it through the same KnowledgeGraph the Twin panel
+   * uses, runs one demonstration irrigation what-if against the field's
+   * real current evidence, and indexes everything into a research catalog
+   * alongside registered datasets/models. Nothing here recomputes evidence
+   * — it only explains/traces/catalogs what other panels already show.
+   */
+  private renderResearch(): void {
+    const field = this.world.getField(this.worldIds.fieldId);
+    if (!field) return;
+
+    const { twin, recentObservations } = this.computeTwinForField(field);
+    const topRecommendation = twin.recommendations.find((r) => r.status === 'ACTIONABLE') ?? null;
+    const explanation = topRecommendation ? explainRecommendation(topRecommendation) : explainFieldOptimization(twin.fieldOptimization);
+
+    const graph = KnowledgeGraph.build(this.world, recentObservations, [
+      {
+        id: explanation.subjectId,
+        type: explanation.subjectType,
+        fieldId: field.id,
+        zoneId: null,
+        computedAt: explanation.generatedAt,
+        supportingObservationIds: explanation.evidenceObservationIds
+      }
+    ]);
+    const decisionTrace = buildDecisionTrace({ explanation, graph, subjectGraphNodeId: `Field:${field.id}` });
+
+    const scenarioMoisture = twin.irrigation.moistureStatus === 'DRY' ? 'ADEQUATE' : 'DRY';
+    const experiment = runIrrigationWhatIf({
+      name: 'What if soil moisture were different right now?',
+      baseline: {
+        fieldId: field.id,
+        moistureStatus: twin.irrigation.moistureStatus,
+        moistureSampleId: twin.irrigation.moistureSampleId,
+        observations: recentObservations as Observation<number>[],
+        recentRainfallMm: twin.irrigation.recentRainfallMm,
+        recentEvents: this.world.listEventsForField(field.id)
+      },
+      scenarioOverrides: { moistureStatus: scenarioMoisture }
+    });
+
+    const catalog = buildResearchCatalog({
+      datasets: this.world.listDatasetsForField(field.id),
+      models: PLANNED_MODELS,
+      experiments: [experiment],
+      decisionTraces: [decisionTrace]
+    });
+
+    this.researchPanel.render({ explanation, decisionTrace, experiment, catalog });
   }
 
   private refreshSensorHealth(): void {

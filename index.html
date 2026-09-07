@@ -262,6 +262,10 @@
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 21h18M5 21V10l7-6 7 6v11M9 21v-6h6v6"/></svg>
                 <span>Farmer</span>
             </button>
+            <button class="ctrl-btn" id="btnResearch" title="Toggle the research view — why this result, decision trace, experiments, dataset/model provenance">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+                <span>Research</span>
+            </button>
             <button class="ctrl-btn" id="btnReset" title="Reset View">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
                 <span>Reset</span>
@@ -345,6 +349,15 @@
             <span class="panel-status deferred">PLAIN LANGUAGE — NO RAW SCORES</span>
         </div>
         <div id="farmerContent"></div>
+    </div>
+
+    <!-- Research / Explainability (closed by default) -->
+    <div id="researchPanel" class="hidden">
+        <div class="inspector-header">
+            <span>RESEARCH — WHY THIS RESULT?</span>
+            <span class="panel-status deferred">EXPLANATION + DECISION TRACE + WHAT-IF</span>
+        </div>
+        <div id="researchContent"></div>
     </div>
 
     <!-- Data Import (closed by default) -->
