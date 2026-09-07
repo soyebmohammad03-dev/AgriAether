@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createSoilSample } from './SoilSample';
-import { assertSoilSampleSensorCapable, soilSampleToObservations } from './soilSampleToObservations';
+import { assertSoilSampleSensorCapable, soilSampleToObservations, soilTextureToObservation } from './soilSampleToObservations';
 import { createSensorRecord } from '../domain/SensorRecord';
 
 describe('soilSampleToObservations', () => {
@@ -16,6 +16,34 @@ describe('soilSampleToObservations', () => {
     const sample = createSoilSample({ fieldId: 'field_1', method: 'LABORATORY', measurements: { moisturePercent: 30 } });
     const observations = soilSampleToObservations(sample);
     expect(observations[0].source).not.toMatch(/external:/);
+  });
+
+  it('carries the sample location and confidence through to each Observation', () => {
+    const sample = createSoilSample({
+      fieldId: 'field_1',
+      method: 'LABORATORY',
+      measurements: { ph: 6.5 },
+      location: { lat: 10, lon: 20 },
+      confidence: 0.9
+    });
+    const [obs] = soilSampleToObservations(sample);
+    expect(obs.location).toEqual({ frame: 'geodetic', crs: 'EPSG:4326', lat: 10, lon: 20 });
+    expect(obs.confidence).toBe(0.9);
+  });
+});
+
+describe('soilTextureToObservation', () => {
+  it('returns null when the sample has no texture class', () => {
+    const sample = createSoilSample({ fieldId: 'f', method: 'LABORATORY', measurements: { ph: 6.5 } });
+    expect(soilTextureToObservation(sample)).toBeNull();
+  });
+
+  it('produces a soil.texture Observation<string> carrying the sample provenance', () => {
+    const sample = createSoilSample({ fieldId: 'f', method: 'LABORATORY', measurements: {}, textureClass: 'CLAY_LOAM' });
+    const obs = soilTextureToObservation(sample);
+    expect(obs?.type).toBe('soil.texture');
+    expect(obs?.value).toBe('CLAY_LOAM');
+    expect(obs?.provenance).toBe('MEASURED');
   });
 });
 

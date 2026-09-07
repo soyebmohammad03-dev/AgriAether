@@ -757,6 +757,55 @@ a university dataset) would implement against; no bulk/streaming import
 deliberate ceiling, not a silent truncation, since a rejected/truncated
 import is reported, not hidden).
 
+## Soil intelligence (Phase 8)
+
+Phase 6 established `SoilSample`/`soilSampleToObservations`; Phase 8 rounds
+out the soil model with spatial context, a texture taxonomy, and a
+deterministic quality layer — no new architecture, all built on the
+existing `Observation`/provenance/`WorldRegistry` foundation.
+
+- **`SoilSample` (`soil/SoilSample.ts`)** gained `location` (an optional
+  WGS84 point, distinct from and finer-grained than `fieldId`/`zoneId` —
+  validated via `geo/geometry.ts`, never guessed), `textureClass` (the
+  standard 12-class USDA textural triangle, `SOIL_TEXTURE_CLASSES` — only
+  ever set from an actual lab/field determination, never inferred from
+  imagery or moisture), `confidence` (0-1, validated), and
+  `MEASUREMENT_PLAUSIBLE_RANGES` (the same generous-bounds pattern
+  `sensors/GroundSample.ts` already uses). A sample may now be
+  texture-only (no numeric measurement) rather than requiring one.
+- **`soil/SoilQuality.ts` (new)** — deterministic, documented interpretation
+  bands: `moistureStatus`/`ecStatus`/`phStatus` (standard soil-science
+  ranges, explicitly *not* crop-specific and never a recommendation),
+  `measurementDataQuality` (reuses `sensing/DataQuality.ts`'s
+  `deriveDataQuality` for an OUT_OF_RANGE flag per measurement — a flag,
+  never a rejection), and `soilSampleCompleteness` (which of the seven
+  known quantities are present, never assuming a missing one is zero). No
+  soil-health score, no fertilizer recommendation — explicitly out of
+  scope for this phase.
+- **`soilSampleToObservations.ts`** now carries `location` and `confidence`
+  through to each `Observation`, and a new `soilTextureToObservation`
+  produces a `soil.texture` `Observation<string>` (categorical, kept
+  separate from the numeric-measurement conversion) — `null` when the
+  sample has no texture, never a fabricated default.
+- **`WorldRegistry.registerSoilSample`** now validates `zoneId` the same
+  way `registerSensorDeployment` already validates its target: the zone
+  must exist *and* belong to the sample's own field, not just any zone in
+  the world.
+- **UI**: the Data Catalog's soil rows now show depth, location (point,
+  zone, or field-level), measurement completeness, texture, the
+  moisture/EC/pH status bands, and an out-of-range flag — computed from
+  `summarizeSoilSampleQuality`, never invented. The honest "no soil sensor
+  or laboratory sample registered" empty state (Phase 6) is unchanged for
+  when none exist.
+
+**What Phase 8 deliberately does not include**: any soil-health score,
+fertilizer/amendment recommendation, spatial interpolation between samples
+(the new `location` field only *prepares* for that — no interpolation
+algorithm is implemented), a live soil data provider (`SoilDataProvider`
+remains intentionally `UnconfiguredSoilProvider` — see Phase 6's reasoning
+above, unchanged), and no ML/ disease detection/crop-health scoring
+(explicitly out of scope, per the roadmap).
+
 ## Security
 
 Vite bundles any `VITE_`-prefixed environment variable straight into the
@@ -946,18 +995,29 @@ pipeline without the UI changing at all.
    but-unintegrated public dataset survey, and Data Catalog / Observation
    Inspector sections surfacing sources and import history — still no
    live external dataset provider beyond the existing weather pipeline.
-8. First real ML model + first real external dataset — once a genuine
+8. ~~Soil intelligence~~ — this repository, Phase 8: `SoilSample` gained
+   `location`, `textureClass` (the 12-class USDA texture taxonomy), and
+   `confidence`; the new `soil/SoilQuality.ts` adds deterministic
+   moisture/EC/pH status bands, per-measurement OUT_OF_RANGE detection, and
+   measurement-completeness reporting; `soilSampleToObservations` carries
+   location/confidence through and gained a `soil.texture` observation
+   path; `WorldRegistry` now validates a soil sample's zone actually
+   belongs to its field; the Data Catalog's soil rows show real quality/
+   completeness — still no soil-health score, no fertilizer
+   recommendation, no spatial interpolation, and no live soil data
+   provider.
+9. First real ML model + first real external dataset — once a genuine
    labeled dataset exists (real or high-fidelity simulated imagery with
    verified labels) and/or a live `DatasetProvider` implementation is
    added, train and register a model against `ModelRegistry`'s contract; a
    real (non-Null-Island) field boundary and CRS pipeline if real field
    data becomes available.
-9. Autonomous missions + AI decision engine — coverage planning, temporal
-   comparison across flights, sensor fusion converted into a validated
-   prediction with preserved uncertainty.
-10. Real hardware + community platform — first real flight-controller/sensor
+10. Autonomous missions + AI decision engine — coverage planning, temporal
+    comparison across flights, sensor fusion converted into a validated
+    prediction with preserved uncertainty.
+11. Real hardware + community platform — first real flight-controller/sensor
     (including camera/multispectral/thermal/soil) integration behind the
     `Sensor`/drone abstractions proven here; open datasets and plugin
     contributions.
 
-Phase 7 is not started and requires separate approval before work begins.
+Phase 9 is not started and requires separate approval before work begins.

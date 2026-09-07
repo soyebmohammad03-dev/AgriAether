@@ -22,4 +22,30 @@ describe('createSoilSample', () => {
     expect(createSoilSample({ fieldId: 'f', method: 'SIMULATION', measurements: { ph: 6.5 } }).provenance).toBe('SIMULATED');
     expect(createSoilSample({ fieldId: 'f', method: 'EXTERNAL_DATASET', measurements: { ph: 6.5 } }).provenance).toBe('EXTERNAL');
   });
+
+  it('accepts a texture-only sample with no numeric measurements', () => {
+    expect(() => createSoilSample({ fieldId: 'f', method: 'LABORATORY', measurements: {}, textureClass: 'CLAY_LOAM' })).not.toThrow();
+  });
+
+  it('rejects an out-of-range latitude/longitude in location', () => {
+    expect(() =>
+      createSoilSample({ fieldId: 'f', method: 'LABORATORY', measurements: { ph: 6.5 }, location: { lat: 200, lon: 20 } })
+    ).toThrow(/latitude/);
+  });
+
+  it('accepts a valid location and preserves it', () => {
+    const sample = createSoilSample({ fieldId: 'f', method: 'LABORATORY', measurements: { ph: 6.5 }, location: { lat: 10, lon: 20 } });
+    expect(sample.location).toEqual({ lat: 10, lon: 20 });
+  });
+
+  it('rejects a confidence outside 0-1', () => {
+    expect(() => createSoilSample({ fieldId: 'f', method: 'LABORATORY', measurements: { ph: 6.5 }, confidence: 1.5 })).toThrow(/confidence must be between/);
+  });
+
+  it('defaults location, textureClass, and confidence to null', () => {
+    const sample = createSoilSample({ fieldId: 'f', method: 'LABORATORY', measurements: { ph: 6.5 } });
+    expect(sample.location).toBeNull();
+    expect(sample.textureClass).toBeNull();
+    expect(sample.confidence).toBeNull();
+  });
 });

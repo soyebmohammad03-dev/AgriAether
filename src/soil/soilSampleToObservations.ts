@@ -44,10 +44,10 @@ export function soilSampleToObservations(sample: SoilSample, context: Observatio
       value,
       unit: unitForMeasurement(key),
       timestamp: sample.timestamp,
-      location: null,
+      location: sample.location ? { frame: 'geodetic', crs: 'EPSG:4326', lat: sample.location.lat, lon: sample.location.lon } : null,
       source: sample.sensorId ? `sensor:${sample.sensorId}` : `soil-sample:${sample.method.toLowerCase()}`,
       provenance: sample.provenance,
-      confidence: null,
+      confidence: sample.confidence,
       status: 'OK',
       fieldId: sample.fieldId,
       zoneId: sample.zoneId,
@@ -60,4 +60,34 @@ export function soilSampleToObservations(sample: SoilSample, context: Observatio
   }
 
   return observations;
+}
+
+/**
+ * A SoilSample's texture classification, as its own Observation<string> —
+ * kept separate from soilSampleToObservations because texture is
+ * categorical, not a unit-bearing scalar, and is never present on every
+ * sample. Returns null (not a fabricated default) when the sample carries
+ * no texture determination.
+ */
+export function soilTextureToObservation(sample: SoilSample, context: ObservationContext = {}): Observation<string> | null {
+  if (!sample.textureClass) return null;
+  const obs: Observation<string> = {
+    id: createId('obs_soil.texture'),
+    type: 'soil.texture',
+    value: sample.textureClass,
+    unit: null,
+    timestamp: sample.timestamp,
+    location: sample.location ? { frame: 'geodetic', crs: 'EPSG:4326', lat: sample.location.lat, lon: sample.location.lon } : null,
+    source: sample.sensorId ? `sensor:${sample.sensorId}` : `soil-sample:${sample.method.toLowerCase()}`,
+    provenance: sample.provenance,
+    confidence: sample.confidence,
+    status: 'OK',
+    fieldId: sample.fieldId,
+    zoneId: sample.zoneId,
+    sensorId: sample.sensorId,
+    metadata: sample.depthCm !== null ? { depthCm: sample.depthCm } : null,
+    ...context
+  };
+  assertValidObservation(obs);
+  return obs;
 }

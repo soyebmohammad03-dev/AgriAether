@@ -8,6 +8,7 @@ import type { CropObservation } from '../domain/CropObservation';
 import type { SensorKind } from '../domain/SensorRecord';
 import type { DataSourceRecord } from '../data/DataSource';
 import type { ImportReport } from '../data/ImportPipeline';
+import { summarizeSoilSampleQuality } from '../soil/SoilQuality';
 
 export interface SensorRegistryRow {
   kind: SensorKind;
@@ -74,10 +75,19 @@ export class DataCatalogPanel {
 
     const soilRows = soilSamples.length
       ? soilSamples
-          .map(
-            (s) =>
-              `<div class="catalog-dataset"><strong>Soil (${s.method})</strong> — provenance: ${s.provenance}, measurements: ${Object.keys(s.measurements).join(', ')}${s.zoneId ? `, zone: ${s.zoneId}` : ''}</div>`
-          )
+          .map((s) => {
+            const quality = summarizeSoilSampleQuality(s);
+            const statuses = [
+              quality.moistureStatus ? `moisture:${quality.moistureStatus}` : null,
+              quality.ecStatus ? `EC:${quality.ecStatus}` : null,
+              quality.phStatus ? `pH:${quality.phStatus}` : null
+            ]
+              .filter(Boolean)
+              .join(' ');
+            const depth = s.depthCm !== null ? `${s.depthCm}cm` : 'depth unknown';
+            const location = s.location ? `${s.location.lat.toFixed(5)},${s.location.lon.toFixed(5)}` : s.zoneId ? `zone: ${s.zoneId}` : 'field-level';
+            return `<div class="catalog-dataset"><strong>Soil (${s.method})</strong> — provenance: ${s.provenance}, ${depth}, ${location}, completeness: ${quality.completeness.presentCount}/${quality.completeness.totalKnownMeasurements}${s.textureClass ? `, texture: ${s.textureClass}` : ''}${statuses ? ` — ${statuses}` : ''}${quality.hasOutOfRangeMeasurement ? ' <span class="catalog-gap">(out-of-range measurement)</span>' : ''}</div>`;
+          })
           .join('')
       : '<div class="catalog-muted">No soil observations recorded. No physical soil sensor or laboratory sample has been registered for this field — see soil/SoilSample.ts and soil/SoilDataProvider.ts.</div>';
 

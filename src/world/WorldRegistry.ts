@@ -157,10 +157,19 @@ export class WorldRegistry {
     return Array.from(this.datasets.values()).filter((d) => d.fieldId === fieldId);
   }
 
-  /** Requires an existing field so a sample can never reference a field that isn't part of the world — the same referential-integrity discipline as every other register* method here. */
+  /** Requires an existing field so a sample can never reference a field that isn't part of the world — the same referential-integrity discipline as every other register* method here. If zoneId is set, it must both exist and actually belong to sample.fieldId — a sample can't claim a zone from a different field. */
   async registerSoilSample(sample: SoilSample): Promise<SoilSample> {
     if (!this.fields.has(sample.fieldId)) {
       throw new Error(`SoilSample references unknown field "${sample.fieldId}"`);
+    }
+    if (sample.zoneId) {
+      const zone = this.zones.get(sample.zoneId);
+      if (!zone) {
+        throw new Error(`SoilSample references unknown zone "${sample.zoneId}"`);
+      }
+      if (zone.fieldId !== sample.fieldId) {
+        throw new Error(`SoilSample's zone "${sample.zoneId}" belongs to field "${zone.fieldId}", not "${sample.fieldId}"`);
+      }
     }
     this.soilSamples.set(sample.id, sample);
     await this.repositories.soilSamples.save(sample);

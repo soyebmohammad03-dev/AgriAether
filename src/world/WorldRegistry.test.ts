@@ -72,6 +72,23 @@ describe('WorldRegistry relationship invariants', () => {
     await expect(registry.registerGroundSample(sample)).rejects.toThrow(/unknown field/);
   });
 
+  it('a soil sample cannot reference a zone belonging to a different field', async () => {
+    const farm = await registry.registerFarm(createFarm({ name: 'Farm', geoReference: { kind: 'simulation' } }));
+    const fieldA = await registry.registerField(createField({ farmId: farm.id, name: 'A', geoReference: { kind: 'simulation' } }));
+    const fieldB = await registry.registerField(createField({ farmId: farm.id, name: 'B', geoReference: { kind: 'simulation' } }));
+    const zoneOfA = await registry.registerZone(createZone({ fieldId: fieldA.id, name: 'Zone A1', classification: 'UNKNOWN', geoReference: { kind: 'simulation' } }));
+
+    const sample = createSoilSample({ fieldId: fieldB.id, zoneId: zoneOfA.id, method: 'LABORATORY', measurements: { ph: 6.5 } });
+    await expect(registry.registerSoilSample(sample)).rejects.toThrow(/belongs to field/);
+  });
+
+  it('a soil sample cannot reference a nonexistent zone', async () => {
+    const farm = await registry.registerFarm(createFarm({ name: 'Farm', geoReference: { kind: 'simulation' } }));
+    const field = await registry.registerField(createField({ farmId: farm.id, name: 'A', geoReference: { kind: 'simulation' } }));
+    const sample = createSoilSample({ fieldId: field.id, zoneId: 'zone_does_not_exist', method: 'LABORATORY', measurements: { ph: 6.5 } });
+    await expect(registry.registerSoilSample(sample)).rejects.toThrow(/unknown zone/);
+  });
+
   it('a crop observation cannot reference a nonexistent field', async () => {
     const observation = createCropObservation({ fieldId: 'field_does_not_exist', source: 'USER_REPORTED' });
     await expect(registry.registerCropObservation(observation)).rejects.toThrow(/unknown field/);
