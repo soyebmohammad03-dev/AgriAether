@@ -13,6 +13,7 @@ import type { WeatherWindowSummary, GrowingDegreeDaysResult } from '../weather/W
 import type { FieldCropStatusSummary } from '../domain/CropStatusChange';
 import type { CropStressAssessment } from '../sensing/CropStressSignal';
 import type { DatasetReadinessCheck } from '../sensing/ModelRegistry';
+import { escapeHtml as esc } from './escapeHtml';
 
 export interface SensorRegistryRow {
   kind: SensorKind;
@@ -93,7 +94,7 @@ export class DataCatalogPanel {
       ? datasets
           .map(
             (d) =>
-              `<div class="catalog-dataset"><strong>${d.name}</strong> — ${d.type}, provider: ${d.provider}, provenance: ${d.provenance}, quality: ${d.quality}${d.license ? `, license: ${d.license}` : ''}</div>`
+              `<div class="catalog-dataset"><strong>${esc(d.name)}</strong> — ${d.type}, provider: ${esc(d.provider)}, provenance: ${d.provenance}, quality: ${d.quality}${d.license ? `, license: ${esc(d.license)}` : ''}</div>`
           )
           .join('')
       : '<div class="catalog-muted">No datasets registered.</div>';
@@ -129,7 +130,7 @@ export class DataCatalogPanel {
       ? cropObservations
           .map(
             (c) =>
-              `<div class="catalog-dataset"><strong>Crop observation</strong> — stage: ${c.growthStage}, source: ${c.source}${c.observedCondition ? `, "${c.observedCondition}"` : ''}</div>`
+              `<div class="catalog-dataset"><strong>Crop observation</strong> — stage: ${c.growthStage}, source: ${c.source}${c.observedCondition ? `, "${esc(c.observedCondition)}"` : ''}</div>`
           )
           .join('')
       : '<div class="catalog-muted">No crop observations recorded. No health/stress/disease score is ever fabricated in its place.</div>';
@@ -138,7 +139,7 @@ export class DataCatalogPanel {
       ? dataSources
           .map(
             (s) =>
-              `<div class="catalog-dataset"><strong>${s.name}</strong> — ${s.type}, nature: ${s.nature}, status: ${s.ingestionStatus}${s.license ? `, license: ${s.license}` : ''}</div>`
+              `<div class="catalog-dataset"><strong>${esc(s.name)}</strong> — ${s.type}, nature: ${s.nature}, status: ${s.ingestionStatus}${s.license ? `, license: ${esc(s.license)}` : ''}</div>`
           )
           .join('')
       : '<div class="catalog-muted">No data sources registered.</div>';
@@ -198,7 +199,7 @@ export class DataCatalogPanel {
       .join('');
 
     this.content.innerHTML = [
-      `<div class="catalog-section"><h4>Field Summary — ${summary.fieldName}</h4>`,
+      `<div class="catalog-section"><h4>Field Summary — ${esc(summary.fieldName)}</h4>`,
       `<div class="catalog-kv"><span>Area</span><span>${summary.areaHectares !== null ? summary.areaHectares.toFixed(2) + ' ha' : 'unknown'}</span></div>`,
       `<div class="catalog-kv"><span>Datasets</span><span>${summary.datasetCount}</span></div>`,
       `<div class="catalog-kv"><span>Sensor observations (recent)</span><span>${summary.sensorObservationCount}</span></div>`,

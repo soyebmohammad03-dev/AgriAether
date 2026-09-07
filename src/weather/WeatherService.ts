@@ -2,6 +2,7 @@ import type { Repository } from '../persistence/Repository';
 import type { WeatherProvider } from './WeatherProvider';
 import type { WeatherObservation } from './WeatherObservation';
 import { type WeatherCacheEntry, weatherCacheKey } from './WeatherCacheEntry';
+import { diagnostics } from '../diagnostics/Diagnostics';
 
 /** A cache entry younger than this is served without calling the provider again. */
 const FRESH_TTL_MS = 15 * 60 * 1000;
@@ -42,10 +43,16 @@ export class WeatherService {
       await this.cache.save({ id: key, observation: fresh, cachedAt: this.now() } satisfies WeatherCacheEntry);
       return { observation: fresh, freshness: 'FRESH' };
     } catch (error) {
+      diagnostics.log({
+        severity: cached ? 'WARN' : 'ERROR',
+        category: 'EXTERNAL_DATA',
+        operation: 'WeatherService.getCurrentWeather',
+        message: cached ? 'Weather provider request failed — falling back to cached reading.' : 'Weather provider request failed with no cache to fall back to.',
+        detail: { providerId: this.provider.id, message: (error as Error).message ?? null }
+      });
       if (!cached) return null;
       // Past the staleness ceiling, still returned (offline-first: something is better than nothing) but never silently as current.
       const freshness = cacheAge < STALE_CEILING_MS ? 'CACHED' : 'STALE';
-      void error; // not actionable beyond falling back to cache; a caller needing the reason can wrap the provider itself.
       return { observation: { ...cached.observation, freshness }, freshness };
     }
   }

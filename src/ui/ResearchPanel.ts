@@ -2,6 +2,7 @@ import type { Explanation } from '../explainability/Explanation';
 import type { DecisionTrace } from '../explainability/DecisionTrace';
 import type { Experiment } from '../research/Experiment';
 import type { ResearchCatalogEntry } from '../research/ResearchCatalog';
+import { escapeHtml as esc } from './escapeHtml';
 
 export interface ResearchViewModel {
   explanation: Explanation | null;
@@ -37,8 +38,8 @@ export class ResearchPanel {
           `<div class="catalog-kv"><span>Conclusion</span><span>${explanation.conclusion}</span></div>`,
           `<div class="catalog-kv"><span>Confidence</span><span>${explanation.confidence ?? 'not reported'}</span></div>`,
           `<div class="catalog-kv"><span>Method</span><span>${explanation.method}</span></div>`,
-          `<div class="catalog-dataset">Farmer: ${explanation.farmerText}</div>`,
-          `<div class="catalog-dataset">Technical: ${explanation.technicalText}</div>`,
+          `<div class="catalog-dataset">Farmer: ${esc(explanation.farmerText)}</div>`,
+          `<div class="catalog-dataset">Technical: ${esc(explanation.technicalText)}</div>`,
           `<div class="catalog-kv"><span>Evidence used</span><span>${explanation.evidenceObservationIds.join(', ') || 'none'}</span></div>`,
           `<div class="catalog-kv"><span>Evidence not available</span><span>${explanation.evidenceNotAvailable.join(', ') || 'none'}</span></div>`,
           ...explanation.assumptions.map((a) => `<div class="catalog-muted">Assumption: ${a}</div>`),
@@ -62,7 +63,7 @@ export class ResearchPanel {
     const catalogRows = catalog.length
       ? catalog
           .slice(0, 15)
-          .map((e) => `<div class="catalog-dataset">[${e.kind}] ${e.title} — ${e.provenance}</div>`)
+          .map((e) => `<div class="catalog-dataset">[${e.kind}] ${esc(e.title)} — ${esc(e.provenance)}</div>`)
           .join('')
       : '<div class="catalog-muted">No datasets, models, experiments, or traces yet.</div>';
 

@@ -1,6 +1,7 @@
 import type { MissionDecision } from '../drone/AutonomyEngine';
 import type { FleetDrone, AssignmentResult } from '../fleet/Fleet';
 import type { ConnectionState, HardwareProvenance } from '../hardware/HardwareInterface';
+import { escapeHtml as esc } from './escapeHtml';
 
 export interface OperationsViewModel {
   decision: MissionDecision;
@@ -36,7 +37,7 @@ export class OperationsPanel {
     const decisionRows = [
       `<div class="catalog-kv"><span>Objective</span><span>${decision.objective}</span></div>`,
       `<div class="catalog-kv"><span>Triggered by</span><span>${decision.triggeringRecommendationId ?? 'none — routine survey'}</span></div>`,
-      `<div class="catalog-dataset">${decision.rationale}</div>`
+      `<div class="catalog-dataset">${esc(decision.rationale)}</div>`
     ].join('');
 
     const planRows = decision.plan.mission
@@ -61,7 +62,7 @@ export class OperationsPanel {
     ].join('');
 
     const fleetRows = [
-      `<div class="catalog-kv"><span>${fleetDrone.name}</span><span>${fleetDrone.status} (${fleetDrone.provenance})</span></div>`,
+      `<div class="catalog-kv"><span>${esc(fleetDrone.name)}</span><span>${fleetDrone.status} (${fleetDrone.provenance})</span></div>`,
       `<div class="catalog-kv"><span>Capabilities</span><span>${fleetDrone.capabilities.join(', ') || 'none'}</span></div>`,
       `<div class="catalog-kv"><span>Battery</span><span>${fleetDrone.batteryStateOfCharge !== null ? `${fleetDrone.batteryStateOfCharge.toFixed(0)}%` : 'n/a'}</span></div>`
     ].join('');

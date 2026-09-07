@@ -1,3 +1,5 @@
+import { diagnostics } from '../diagnostics/Diagnostics';
+
 export const DATABASE_NAME = 'agriaether';
 export const DATABASE_VERSION = 7;
 
@@ -51,7 +53,26 @@ export function openDatabase(): Promise<IDBDatabase> {
       openDb = request.result;
       resolve(request.result);
     };
-    request.onerror = () => reject(request.error);
+    request.onerror = () => {
+      diagnostics.log({
+        severity: 'ERROR',
+        category: 'PERSISTENCE',
+        operation: 'openDatabase',
+        message: 'Failed to open IndexedDB — data will not persist this session.',
+        detail: { name: request.error?.name ?? null }
+      });
+      reject(request.error);
+    };
+    // A version bump (DATABASE_VERSION increased) blocks here if another tab still holds an older connection open —
+    // without this handler the open() call hangs forever with no visible reason. Surfaced, never silently retried.
+    request.onblocked = () => {
+      diagnostics.log({
+        severity: 'WARN',
+        category: 'PERSISTENCE',
+        operation: 'openDatabase',
+        message: 'Database open blocked by another open tab on an older schema version — close other AgriAether tabs to continue.'
+      });
+    };
   });
 
   return dbPromise;

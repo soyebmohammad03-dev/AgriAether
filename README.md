@@ -13,6 +13,14 @@ fixture** (see "Real agricultural data pipeline" below), **plus a real CSV/
 GeoJSON import UI with validation, deduplication, and an auditable report**
 (see "Real agricultural data ingestion + field data platform" below) — no
 live external dataset provider beyond weather is wired up, by design.
+Phases 10–15 (see "Phases 10–15: intelligence, autonomy, farmer/community,
+and hardening" below) then built a Digital Twin, Knowledge Graph,
+recommendation/irrigation/nutrient intelligence, simulation-only autonomous
+mission planning, farmer/community/offline/localization layers, an
+explainability/research layer, and production hardening — all still over
+this same simulation core. **No real ML model, no real hardware, and no
+real cloud sync exist anywhere in this repository**; every place that would
+need one says so explicitly instead of faking it.
 
 ## Project status (be skeptical of anything that sounds bigger than this)
 
@@ -889,7 +897,24 @@ genuinely private API key **cannot** be called directly from this frontend
 as it stands; it would need a small backend/proxy holding the key
 server-side first. Don't add a keyed provider by pasting a key into a
 `VITE_*` variable and calling it a day — that key would ship to every
-visitor's browser.
+visitor's browser. No `VITE_`/`process.env` variable is read anywhere in
+`src/` today — there is nothing to leak.
+
+**XSS / untrusted content (Phase 15):** every UI panel renders via
+`innerHTML` template strings rather than DOM APIs (a deliberate, lightweight
+choice — see `src/ui/`). Any string that ultimately originates from a file
+upload, imported CSV/GeoJSON, or free-text field (`CropObservation.observedCondition`,
+dataset/source name, drone/fleet name) is passed through
+`src/ui/escapeHtml.ts` before interpolation. System-generated text (enum
+values, computed numbers, hardcoded template strings) is not — only
+strings whose origin traces back to a file or user input are in-scope.
+`src/data/AssetSecurity.ts` caps upload size (50MB), enforces a MIME
+allowlist, and strips path-traversal/null-byte filenames.
+`src/data/CsvImport.ts` caps row count (50,000) and per-field length
+(10,000 chars); `src/data/GeoJsonIngestion.ts` caps total polygon vertices
+(50,000) before running the (otherwise O(n²)-ish) self-intersection check —
+all three exist specifically so a malicious or oversized import file fails
+fast with an explicit error rather than hanging the tab.
 
 ## Persistence
 
@@ -906,11 +931,16 @@ contract the domain layer depends on — nothing in `domain/`, `world/`, or
   A `weatherCache` object store was added in Phase 3 (schema version 2), a
   `datasets` store in Phase 5 (schema version 3), `soilSamples`/
   `groundSamples`/`cropObservations` stores in Phase 6 (schema version 4),
-  `dataSources`/`importRecords` stores in Phase 7 (schema version 5), and a
+  `dataSources`/`importRecords` stores in Phase 7 (schema version 5), a
   `dailyWeatherRecords` store in the Phase 9 consolidated milestone (schema
-  version 6) —
-  each migration only adds missing stores, verified live to never touch
-  existing data.
+  version 6), and `tasks`/`communityContributions` stores in Phase 13
+  (schema version 7) —
+  each migration only adds missing stores (`openDatabase`'s `onupgradeneeded`
+  checks `db.objectStoreNames.contains(name)` before creating one), verified
+  live to never touch existing data. `openDatabase` also handles the
+  `onblocked` case (a stale tab holding an older schema version open) by
+  logging a diagnostic instead of hanging silently forever — see
+  "Diagnostics" below.
 - **InMemoryRepository** — a trivial Map-backed implementation used in tests
   (no IndexedDB under Vitest's node environment) and as a fallback.
 
@@ -923,14 +953,85 @@ stay in an in-memory ring buffer for the live Inspector panel. Weather
 readings are infrequent enough (one poll per `WEATHER_REFRESH_INTERVAL_MS`,
 5 minutes) to persist every time.
 
-**Offline-first direction (not yet built):** the plan is a
-`SyncingRepository<T>` that wraps a local repository with a sync queue and
-conflict resolution against a future server, implementing the same
-`Repository<T>` interface — so when a backend arrives, no domain code
-changes, only which repository implementation `persistence/repositories.ts`
-constructs. This repository is not yet PostGIS/Postgres-backed anywhere;
-that remains appropriate future server-side storage once one exists,
-compatible with the same `Repository<T>` seam.
+**Offline-first (Phase 13, `src/offline/OfflineSync.ts`):** there is still
+no real remote sync endpoint anywhere in this repository. `deriveSyncStatus`
+tells the truth about that — with `hasRemoteEndpoint: false` (the only value
+ever passed in this codebase today), a record can only ever be `LOCAL` or
+`ERROR`, never `SYNCED`/`PENDING`, which would imply a round trip that isn't
+happening. `detectConflict` is a documented foundation only (`LOCAL_ONLY`
+today, `CONFLICT`/`NONE` once a remote timestamp actually exists to compare
+against). When a backend arrives, the plan is still a `SyncingRepository<T>`
+wrapping a local repository behind the same `Repository<T>` interface — no
+domain code would need to change, only which repository implementation
+`persistence/repositories.ts` constructs, and `deriveSyncStatus` would start
+being called with `hasRemoteEndpoint: true`.
+
+## Phases 10–15: intelligence, autonomy, farmer/community, and hardening
+
+Everything below composes the domain data already described above — none of
+it is a second parallel system.
+
+- **Sensor fusion / Digital Twin / temporal / Knowledge Graph** (Phase 10,
+  `src/sensing/SensorFusion.ts`, `src/twin/FieldTwin.ts`,
+  `src/temporal/TemporalIntelligence.ts`, `src/graph/KnowledgeGraph.ts`): a
+  deterministic evidence-alignment layer over Observations, a per-field
+  snapshot composing soil/crop/weather/vegetation/irrigation/nutrient state
+  with `INSUFFICIENT_DATA` fallbacks (never a fabricated value), reusable
+  freshness/window/trend/gap utilities, and an in-memory typed graph
+  (`Farm → Field → Zone → Sensor/CropCycle/Dataset/Observation/Analysis`)
+  rebuilt on demand — no new storage, no Neo4j.
+- **Decision intelligence** (Phase 11, `src/sensing/RecommendationEngine.ts`,
+  `src/irrigation/IrrigationIntelligence.ts`, `src/soil/NutrientIntelligence.ts`,
+  `src/sensing/FieldOptimization.ts`): evidence-linked recommendations
+  (`ACTIONABLE`/`NEEDS_MORE_DATA`, never a pesticide/fertilizer dose),
+  irrigation-need and nutrient-band screens (never a water volume or a
+  fertility score), and a field/zone status
+  (`OPTIMAL`/`ATTENTION`/`CONSTRAINED`/`INSUFFICIENT_DATA`) aggregating them.
+- **Autonomous drone operations** (Phase 12, `src/mission/AgriculturalMission.ts`,
+  `src/drone/AutonomyEngine.ts`, `src/edge/EdgeInference.ts`,
+  `src/hardware/HardwareInterface.ts`, `src/fleet/Fleet.ts`): mission
+  planning generates real lawnmower waypoints only for this repo's
+  `DEMO_ONLY` field boundary (a documented local↔geodetic transform — see
+  `src/geo/georeference.ts`); any other geometry provenance returns
+  `mission: null` with an explicit limitation rather than fabricated GPS
+  coordinates. `AutonomyEngine` picks a mission objective from the highest-
+  urgency `ACTIONABLE` recommendation (deterministic, no learned policy).
+  `SimulatedEdgeDevice` always returns `NOT_AVAILABLE` (no model is
+  deployed). `SimulatedFlightController` is the only connectable hardware
+  device; `UnimplementedRealHardwareDevice` always fails `connect()` into
+  `ERROR` — no real hardware is ever claimed connected. `Fleet.assignMission`
+  never assigns a drone lacking a required sensor capability, never assigns
+  a non-executable mission, and never double-assigns a busy drone.
+- **Farmer / community / offline / localization** (Phase 13,
+  `src/farmer/`, `src/community/`, `src/offline/`, `src/i18n/`): plain-
+  language farmer insights rephrase the Twin's evidence (no NDVI/CRS/sensor
+  ids, no raw scores); tasks (`OPEN`/`IN_PROGRESS`/`COMPLETED`/`DISMISSED`)
+  are generated from recommendations and are inspection/sampling actions
+  only. Community contributions reuse `Observation`'s `Provenance`
+  vocabulary and start `UNVERIFIED` — nothing auto-promotes one into a
+  Recommendation or Twin state. English and Hindi cover static UI-chrome
+  labels only (`src/i18n/i18n.ts`); dynamic agricultural text is never
+  machine-translated.
+- **Explainability / research** (Phase 14, `src/explainability/`,
+  `src/research/`): `Explanation` adapters rephrase existing evidence
+  outputs (Recommendation, CropStress, DiseasePestRisk, Irrigation,
+  Nutrient, FieldOptimization, MissionDecision, Prediction) into a farmer
+  + technical explanation, copying `confidence` through verbatim rather
+  than inventing one. `DecisionTrace` reuses `KnowledgeGraph.evidenceFor`
+  for its observation-discovery step — not a second provenance system.
+  `Experiment` (what-if) re-runs the exact same production rule functions
+  against hypothetical inputs, tagging every value
+  `OBSERVED_REAL_DATA`/`SIMULATED_INPUT`/`DERIVED_OUTPUT`/`HYPOTHETICAL_RESULT`;
+  a hypothetical result is never written back as an Observation.
+- **Production hardening** (Phase 15, `src/diagnostics/Diagnostics.ts`,
+  `src/ui/escapeHtml.ts`): a bounded (500-event ring buffer), in-memory
+  structured diagnostics log — severity/category/operation/correlation id,
+  never secrets — wired into IndexedDB open/blocked, weather-provider
+  fallback, import-pipeline summaries, and mission-safety-validation
+  failures. Every UI panel escapes untrusted (file-derived or free-text)
+  strings before `innerHTML` interpolation; CSV/GeoJSON imports are capped
+  (rows, field length, polygon vertices) against oversized/malicious input.
+  No telemetry leaves the browser.
 
 ## Local development
 
@@ -1081,18 +1182,36 @@ pipeline without the UI changing at all.
    completeness — still no soil-health score, no fertilizer
    recommendation, no spatial interpolation, and no live soil data
    provider.
-9. First real ML model + first real external dataset — once a genuine
-   labeled dataset exists (real or high-fidelity simulated imagery with
-   verified labels) and/or a live `DatasetProvider` implementation is
-   added, train and register a model against `ModelRegistry`'s contract; a
-   real (non-Null-Island) field boundary and CRS pipeline if real field
-   data becomes available.
-10. Autonomous missions + AI decision engine — coverage planning, temporal
-    comparison across flights, sensor fusion converted into a validated
-    prediction with preserved uncertainty.
-11. Real hardware + community platform — first real flight-controller/sensor
-    (including camera/multispectral/thermal/soil) integration behind the
-    `Sensor`/drone abstractions proven here; open datasets and plugin
-    contributions.
+9. ~~Sensor fusion, Digital Twin, temporal intelligence, Knowledge Graph~~ —
+   Phase 10 (see "Phases 10–15" above).
+10. ~~Decision intelligence~~ — Phase 11: `ModelRegistry` gained a feature
+    schema/dataset version/train-eval timestamps and `PredictionRecord`
+    provenance, `RecommendationEngine`, `IrrigationIntelligence`,
+    `NutrientIntelligence`, and `FieldOptimization`.
+11. ~~Autonomous drone operations~~ — Phase 12: agricultural mission
+    planning, `AutonomyEngine`, edge-inference and hardware abstractions,
+    and a fleet-assignment foundation — simulation-only throughout (see
+    below).
+12. ~~Farmer, community, offline, and localization foundations~~ — Phase 13.
+13. ~~Explainability, decision traces, and research/experiment
+    foundations~~ — Phase 14.
+14. ~~Production hardening, security, and reliability~~ — Phase 15 (this
+    milestone).
 
-Phase 9 is not started and requires separate approval before work begins.
+**Still not started / genuinely open:**
+- **A first real trained ML model.** No labeled agricultural dataset exists
+  in this repository (real or high-fidelity simulated with verified
+  labels). Every `ModelRegistry` entry stays `NOT_DEPLOYED`; every
+  prediction request returns `NOT_AVAILABLE` with a stated reason. This is
+  the single biggest remaining gap between "intelligence platform" and
+  "intelligence platform with real intelligence in it."
+- **A real (non-`DEMO_ONLY`) field boundary / CRS pipeline exercised
+  end-to-end**, if/when real field data becomes available — the ingestion
+  and geometry code already supports arbitrary WGS84 polygons; only the
+  seeded demo world is Null-Island-anchored.
+- **Real hardware.** No flight controller, GPS, IMU, camera, or
+  soil/environmental sensor is ever connected — `SimulatedFlightController`
+  is the only implementation that can reach `CONNECTED`,
+  `UnimplementedRealHardwareDevice` always fails into `ERROR`.
+- **A real remote sync backend.** `OfflineSync.ts` is honest that one
+  doesn't exist; `deriveSyncStatus` never reports `SYNCED`/`PENDING`.

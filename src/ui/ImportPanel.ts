@@ -4,6 +4,7 @@ import type { DataSourceRecord } from '../data/DataSource';
 import { parseCsv, type ColumnMapping } from '../data/CsvImport';
 import { runCsvObservationImport, runFieldBoundaryImport, type CsvImportResult, type FieldBoundaryImportResult } from '../data/ImportPipeline';
 import { validateUploadCandidate } from '../data/AssetSecurity';
+import { escapeHtml as esc } from './escapeHtml';
 
 const CANONICAL_COLUMNS: Array<{ key: keyof ColumnMapping; label: string; required: boolean }> = [
   { key: 'timestamp', label: 'timestamp', required: true },
@@ -30,10 +31,6 @@ export interface ImportPanelDeps {
   existingObservationIds: () => ReadonlySet<string>;
   onCsvImportComplete: (result: CsvImportResult) => void;
   onFieldBoundaryImportComplete: (result: FieldBoundaryImportResult) => void;
-}
-
-function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /**

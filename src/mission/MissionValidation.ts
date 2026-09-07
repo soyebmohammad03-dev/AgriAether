@@ -1,4 +1,5 @@
 import type { AgriculturalMissionPlan } from './AgriculturalMission';
+import { diagnostics } from '../diagnostics/Diagnostics';
 
 export interface MissionValidationResult {
   valid: boolean;
@@ -26,6 +27,17 @@ export function validateMissionPlan(plan: AgriculturalMissionPlan, availableSens
   const missingSensors = plan.requiredSensorKinds.filter((k) => !availableSensorKinds.includes(k));
   if (missingSensors.length > 0) {
     errors.push(`Required sensor kind(s) not available to fly this mission: ${missingSensors.join(', ')}.`);
+  }
+
+  if (errors.length > 0) {
+    diagnostics.log({
+      severity: 'WARN',
+      category: 'MISSION',
+      operation: 'validateMissionPlan',
+      message: `Mission plan ${plan.id} for field ${plan.fieldId} failed safety validation: ${errors.join(' ')}`,
+      correlationId: plan.id,
+      detail: { objective: plan.objective, errorCount: errors.length }
+    });
   }
 
   return { valid: errors.length === 0, errors, warnings };

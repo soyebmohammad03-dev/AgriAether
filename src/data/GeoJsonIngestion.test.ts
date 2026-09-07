@@ -58,4 +58,13 @@ describe('ingestFieldBoundaryGeoJson', () => {
     expect(result.status).toBe('INVALID');
     expect(result.issues.some((i) => i.includes('self-intersecting'))).toBe(true);
   });
+
+  it('rejects a geometry with more vertices than the limit, before doing any expensive processing', () => {
+    const hugeRing: number[][] = Array.from({ length: 50_001 }, (_, i) => [i % 180, 0]);
+    hugeRing.push(hugeRing[0]);
+    const oversized: Polygon = { type: 'Polygon', coordinates: [hugeRing] };
+    const result = ingestFieldBoundaryGeoJson(oversized);
+    expect(result.status).toBe('INVALID');
+    expect(result.issues[0]).toMatch(/vertex limit/);
+  });
 });

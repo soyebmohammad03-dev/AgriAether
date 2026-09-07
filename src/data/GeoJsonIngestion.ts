@@ -3,6 +3,13 @@ import { assertValidLatLon, areaHectares, boundingBox, findSelfIntersections } f
 
 export type GeometryRepairMethod = 'NONE' | 'CLOSED_RING';
 
+/** Same order of magnitude as CsvImport's MAX_CSV_ROWS — a field/zone boundary has no legitimate reason to carry more vertices than this, and self-intersection checking is expensive enough that an unbounded polygon is a real hang risk. */
+export const MAX_GEOMETRY_VERTICES = 50_000;
+
+function countVertices(rings: number[][][]): number {
+  return rings.reduce((sum, ring) => sum + ring.length, 0);
+}
+
 export interface FieldBoundaryIngestionResult {
   status: 'VALID' | 'INVALID' | 'REPAIRED';
   /** null when INVALID — an invalid geometry is never silently used downstream. */
@@ -66,6 +73,20 @@ export function ingestFieldBoundaryGeoJson(raw: Polygon | MultiPolygon): FieldBo
       boundingBox: null,
       crs: 'EPSG:4326',
       issues: [`Unsupported geometry type "${(raw as { type: string }).type}" — only Polygon and MultiPolygon are supported.`]
+    };
+  }
+
+  const totalVertices = raw.type === 'Polygon' ? countVertices(raw.coordinates) : raw.coordinates.reduce((sum, rings) => sum + countVertices(rings), 0);
+  if (totalVertices > MAX_GEOMETRY_VERTICES) {
+    return {
+      status: 'INVALID',
+      geometry: null,
+      originalGeometry,
+      repairMethod: 'NONE',
+      areaHectares: null,
+      boundingBox: null,
+      crs: 'EPSG:4326',
+      issues: [`Geometry has ${totalVertices} vertices, exceeding the ${MAX_GEOMETRY_VERTICES}-vertex limit — rejected before processing.`]
     };
   }
 

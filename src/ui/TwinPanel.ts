@@ -1,6 +1,7 @@
 import type { FieldTwinSnapshot } from '../twin/FieldTwin';
 import type { GraphNode } from '../graph/KnowledgeGraph';
 import type { DatasetReadinessCheck } from '../sensing/ModelRegistry';
+import { escapeHtml as esc } from './escapeHtml';
 
 function fmtValue(v: unknown): string {
   if (v === null || v === undefined) return 'n/a';
@@ -135,7 +136,7 @@ export class TwinPanel {
       : '<div class="catalog-muted">No graph-linked observation evidence found for this field yet.</div>';
 
     this.content.innerHTML = [
-      `<div class="catalog-section"><h4>Digital Twin — ${twin.fieldName}</h4>`,
+      `<div class="catalog-section"><h4>Digital Twin — ${esc(twin.fieldName)}</h4>`,
       `<div class="catalog-kv"><span>Zones</span><span>${twin.zones.length}</span></div>`,
       `<div class="catalog-kv"><span>Active sensors</span><span>${twin.activeSensors.length}</span></div>`,
       `<div class="catalog-kv"><span>Generated</span><span>${new Date(twin.generatedAt).toLocaleTimeString()}</span></div></div>`,

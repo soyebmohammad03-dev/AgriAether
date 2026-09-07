@@ -2,6 +2,7 @@ import type { FarmerOverview } from '../farmer/FarmerInsights';
 import type { FarmTask } from '../farmer/Task';
 import type { SyncStatus } from '../offline/OfflineSync';
 import { t, AVAILABLE_LANGUAGES, type LanguageCode } from '../i18n/i18n';
+import { escapeHtml as esc } from './escapeHtml';
 
 export interface FarmerViewModel {
   overview: FarmerOverview;
@@ -31,7 +32,7 @@ export class FarmerPanel {
   }
 
   private list(items: { text: string }[], emptyText: string): string {
-    return items.length ? items.map((i) => `<div class="catalog-dataset">${i.text}</div>`).join('') : `<div class="catalog-muted">${emptyText}</div>`;
+    return items.length ? items.map((i) => `<div class="catalog-dataset">${esc(i.text)}</div>`).join('') : `<div class="catalog-muted">${emptyText}</div>`;
   }
 
   render(vm: FarmerViewModel): void {
@@ -52,13 +53,13 @@ export class FarmerPanel {
       ? tasks
           .map(
             (task) =>
-              `<div class="catalog-kv"><span>${task.type.replace(/_/g, ' ')} (${task.priority})</span><span>${lang(`status.${task.status === 'IN_PROGRESS' ? 'inProgress' : task.status.toLowerCase()}`)}</span></div><div class="catalog-muted">${task.reason}</div><div>${taskActions(task)}</div>`
+              `<div class="catalog-kv"><span>${task.type.replace(/_/g, ' ')} (${task.priority})</span><span>${lang(`status.${task.status === 'IN_PROGRESS' ? 'inProgress' : task.status.toLowerCase()}`)}</span></div><div class="catalog-muted">${esc(task.reason)}</div><div>${taskActions(task)}</div>`
           )
           .join('')
       : `<div class="catalog-muted">No open tasks.</div>`;
 
     this.content.innerHTML = [
-      `<div class="catalog-section"><h4>${lang('farmer.title')} — ${overview.fieldName}</h4><div>${languageSwitcher}</div></div>`,
+      `<div class="catalog-section"><h4>${lang('farmer.title')} — ${esc(overview.fieldName)}</h4><div>${languageSwitcher}</div></div>`,
       `<div class="catalog-section"><h4>${lang('farmer.conditions')}</h4>${this.list(overview.currentConditions, 'No current condition data yet.')}</div>`,
       `<div class="catalog-section"><h4>${lang('farmer.changes')}</h4>${this.list(overview.importantChanges, 'No notable changes recently.')}</div>`,
       `<div class="catalog-section"><h4>${lang('farmer.opportunities')}</h4>${this.list(overview.opportunities, 'Nothing needs action right now.')}</div>`,

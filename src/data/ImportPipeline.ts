@@ -7,6 +7,19 @@ import { parseCsv, mapCsvRowsToDrafts, type ColumnMapping } from './CsvImport';
 import { validateObservationDraft, type RowValidationContext } from './ImportValidation';
 import { deterministicObservationId } from './ImportIdentity';
 import { ingestFieldBoundaryGeoJson } from './GeoJsonIngestion';
+import { diagnostics } from '../diagnostics/Diagnostics';
+
+/** One diagnostics entry per completed import run — severity reflects whether anything was actually rejected, never the raw record count. */
+function logImportReport(report: ImportReport): void {
+  diagnostics.log({
+    severity: report.recordsRejected > 0 ? 'WARN' : 'INFO',
+    category: 'IMPORT',
+    operation: report.kind === 'CSV_OBSERVATIONS' ? 'runCsvObservationImport' : 'runFieldBoundaryImport',
+    message: `Import ${report.id}: ${report.recordsAccepted} accepted, ${report.recordsRejected} rejected, ${report.recordsQuestionable} questionable, ${report.duplicatesSkipped} duplicates (of ${report.recordsReceived} received).`,
+    correlationId: report.id,
+    detail: { sourceId: report.sourceId, kind: report.kind }
+  });
+}
 
 /**
  * The auditable result of one import (Phase 7, Part 2 & Part 8) — every
@@ -156,26 +169,25 @@ export function runCsvObservationImport(params: CsvImportParams): CsvImportResul
     else counters.accepted += 1;
   }
 
-  return {
-    report: {
-      id: createId('import'),
-      sourceId: params.source.id,
-      kind: 'CSV_OBSERVATIONS',
-      startedAt,
-      endedAt: Date.now(),
-      recordsReceived: drafts.length,
-      recordsAccepted: counters.accepted,
-      recordsRejected: counters.rejected,
-      recordsQuestionable: counters.questionable,
-      duplicatesSkipped: counters.duplicates,
-      validationErrors,
-      warnings,
-      missingTimestamps: counters.missingTimestamps,
-      missingCoordinates: counters.missingCoordinates,
-      unitIssues: counters.unitIssues
-    },
-    accepted
+  const csvReport: ImportReport = {
+    id: createId('import'),
+    sourceId: params.source.id,
+    kind: 'CSV_OBSERVATIONS',
+    startedAt,
+    endedAt: Date.now(),
+    recordsReceived: drafts.length,
+    recordsAccepted: counters.accepted,
+    recordsRejected: counters.rejected,
+    recordsQuestionable: counters.questionable,
+    duplicatesSkipped: counters.duplicates,
+    validationErrors,
+    warnings,
+    missingTimestamps: counters.missingTimestamps,
+    missingCoordinates: counters.missingCoordinates,
+    unitIssues: counters.unitIssues
   };
+  logImportReport(csvReport);
+  return { report: csvReport, accepted };
 }
 
 /** GeoJSON CRS names this pipeline accepts as "this is WGS84" when a legacy `crs` member is present. Anything else is rejected rather than guessed at (Part 4). */
@@ -216,27 +228,25 @@ export function runFieldBoundaryImport(params: FieldBoundaryImportParams): Field
   }
 
   if (errors.length > 0) {
-    return {
-      report: {
-        id: createId('import'),
-        sourceId: params.source.id,
-        kind: 'GEOJSON_FIELD_BOUNDARY',
-        startedAt,
-        endedAt: Date.now(),
-        recordsReceived: 1,
-        recordsAccepted: 0,
-        recordsRejected: 1,
-        recordsQuestionable: 0,
-        duplicatesSkipped: 0,
-        validationErrors: errors,
-        warnings,
-        missingTimestamps: 0,
-        missingCoordinates: 0,
-        unitIssues: 0
-      },
-      geoReference: null,
-      areaHectares: null
+    const rejectedReport: ImportReport = {
+      id: createId('import'),
+      sourceId: params.source.id,
+      kind: 'GEOJSON_FIELD_BOUNDARY',
+      startedAt,
+      endedAt: Date.now(),
+      recordsReceived: 1,
+      recordsAccepted: 0,
+      recordsRejected: 1,
+      recordsQuestionable: 0,
+      duplicatesSkipped: 0,
+      validationErrors: errors,
+      warnings,
+      missingTimestamps: 0,
+      missingCoordinates: 0,
+      unitIssues: 0
     };
+    logImportReport(rejectedReport);
+    return { report: rejectedReport, geoReference: null, areaHectares: null };
   }
 
   const geometry = raw as unknown as Polygon | MultiPolygon;
@@ -251,25 +261,23 @@ export function runFieldBoundaryImport(params: FieldBoundaryImportParams): Field
     warnings.push(`Geometry was repaired (${ingestion.repairMethod}) before acceptance: ${ingestion.issues.join('; ') || 'ring closed automatically'}.`);
   }
 
-  return {
-    report: {
-      id: createId('import'),
-      sourceId: params.source.id,
-      kind: 'GEOJSON_FIELD_BOUNDARY',
-      startedAt,
-      endedAt: Date.now(),
-      recordsReceived: 1,
-      recordsAccepted: rejected ? 0 : 1,
-      recordsRejected: rejected ? 1 : 0,
-      recordsQuestionable: 0,
-      duplicatesSkipped: 0,
-      validationErrors: rejected ? ingestion.issues : [],
-      warnings,
-      missingTimestamps: 0,
-      missingCoordinates: 0,
-      unitIssues: 0
-    },
-    geoReference,
-    areaHectares: ingestion.areaHectares
+  const finalReport: ImportReport = {
+    id: createId('import'),
+    sourceId: params.source.id,
+    kind: 'GEOJSON_FIELD_BOUNDARY',
+    startedAt,
+    endedAt: Date.now(),
+    recordsReceived: 1,
+    recordsAccepted: rejected ? 0 : 1,
+    recordsRejected: rejected ? 1 : 0,
+    recordsQuestionable: 0,
+    duplicatesSkipped: 0,
+    validationErrors: rejected ? ingestion.issues : [],
+    warnings,
+    missingTimestamps: 0,
+    missingCoordinates: 0,
+    unitIssues: 0
   };
+  logImportReport(finalReport);
+  return { report: finalReport, geoReference, areaHectares: ingestion.areaHectares };
 }
