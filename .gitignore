@@ -35,3 +35,16 @@ Thumbs.db
 *.tsbuildinfo
 coverage/
 .vite/
+
+# satellite / raster / ML artifacts — never committed to Git (large, regenerable, or licensed third-party data)
+satellite-cache/
+raster-cache/
+model-cache/
+model-weights/
+*.tif
+*.tiff
+*.cog
+*.onnx
+*.pt
+*.pth
+*.safetensors

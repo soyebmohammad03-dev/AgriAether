@@ -108,5 +108,19 @@ export const PUBLIC_DATASET_EVALUATIONS: PublicDatasetEvaluation[] = [
     apiStability: 'Web service exists but is awkward (SOAP/XML) for a browser-only client with no backend proxy (see Part 18 of this phase\'s architectural rule).',
     suitability: 'US-only and requires either a multi-GB bulk download or a server-side proxy this phase deliberately does not add — a strong future candidate, not practical to wire up live here.',
     verdict: 'INTEGRATE_LATER'
+  },
+  {
+    name: 'Sentinel-2 L2A (via Microsoft Planetary Computer STAC API)',
+    publisher: 'European Space Agency (Copernicus) / hosted and cataloged by Microsoft Planetary Computer',
+    url: 'https://planetarycomputer.microsoft.com/api/stac/v1',
+    accessibility: 'Free, no API key for STAC search; individual Cloud-Optimized GeoTIFF assets require a short-lived SAS token from Planetary Computer\'s public /api/sas/v1/sign endpoint — a documented, keyless signing mechanism, not a workaround.',
+    licensing: 'Copernicus Sentinel Data Terms and Conditions — free and open, attribution required ("Contains modified Copernicus Sentinel data").',
+    geographicMeaning: 'Global (excluding poles), 10-20m native resolution per band, real per-scene footprint — genuinely field-scale, unlike every other evaluated candidate in this file.',
+    temporalMeaning: 'Real per-scene acquisition timestamp (5-day revisit with two satellites), atmospherically corrected (L2A = bottom-of-atmosphere reflectance).',
+    methodology: 'MEASURED',
+    methodologyNotes: 'A genuine satellite radiometric measurement, atmospherically corrected by ESA\'s Sen2Cor processor — not a model/reanalysis surface like every weather/soil candidate above. Digital numbers require a documented, baseline-dependent conversion to reflectance (DN/10000, with a -1000 BOA offset for processing baseline >= 04.00) — see satellite/SentinelReflectance.ts. AgriAether never assigns provenance MEASURED to the derived NDVI Observation itself (that stays ESTIMATED, per Observation.ts\'s own rule that a derived/computed value is never MEASURED); the raw band reflectance Observations are provenance EXTERNAL.',
+    apiStability: 'Public production STAC API; live-tested end-to-end (search -> scene selection -> SAS signing -> windowed COG read via HTTP range requests -> NDVI) during this phase\'s development — see satellite/SentinelIntegration.live.test.ts.',
+    suitability: 'The first genuinely field-relevant, measured (not modeled/interpolated) remote-sensing data source this codebase has integrated — see satellite/SentinelStacProvider.ts.',
+    verdict: 'INTEGRATED'
   }
 ];

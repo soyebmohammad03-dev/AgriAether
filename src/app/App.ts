@@ -60,6 +60,15 @@ import { tasksFromRecommendations, transitionTask, type FarmTask, type TaskStatu
 import { deriveSyncStatus } from '../offline/OfflineSync';
 import type { LanguageCode } from '../i18n/i18n';
 import { ResearchPanel } from '../ui/ResearchPanel';
+import { SatellitePanel, type SatellitePanelState } from '../ui/SatellitePanel';
+import { SatelliteFieldView } from '../ui/SatelliteFieldView';
+import { SentinelStacProvider } from '../satellite/SentinelStacProvider';
+import { buildFieldRasterFromSentinelScene } from '../satellite/SentinelRasterBuilder';
+import { analyzeFieldFromSentinelRaster } from '../satellite/SentinelFieldPipeline';
+import { createSentinelDataSourceRecord, createSentinelDatasetRecord } from '../satellite/registerSentinelDataset';
+import { SatelliteProviderError } from '../satellite/SentinelTypes';
+import { ensureRealTestField } from '../world/realTestField';
+import { boundingBox } from '../geo/geometry';
 import { explainRecommendation, explainFieldOptimization } from '../explainability/Explanation';
 import { buildDecisionTrace } from '../explainability/DecisionTrace';
 import { runIrrigationWhatIf } from '../research/Experiment';
@@ -104,6 +113,12 @@ export class App {
   private readonly operationsPanel = new OperationsPanel();
   private readonly farmerPanel = new FarmerPanel();
   private readonly researchPanel = new ResearchPanel();
+  private readonly satellitePanel = new SatellitePanel();
+  private satelliteFieldView: SatelliteFieldView | null = null;
+  private readonly sentinelProvider = new SentinelStacProvider();
+  private satelliteState: SatellitePanelState = { status: 'IDLE' };
+  private satelliteFetchInFlight = false;
+  private registeredSentinelSource = false;
   private tasks: FarmTask[] = [];
   private readonly knownTaskProvenance = new Set<string>();
   private language: LanguageCode = 'en';
@@ -138,7 +153,8 @@ export class App {
     csvSource: DataSourceRecord,
     geojsonSource: DataSourceRecord,
     importedObservationIds: string[],
-    persistedTasks: FarmTask[]
+    persistedTasks: FarmTask[],
+    private readonly realField: Field
   ) {
     this.weatherService = new WeatherService(new OpenMeteoProvider(), repositories.weatherCache);
     for (const id of importedObservationIds) this.importedObservationIds.add(id);
@@ -208,6 +224,7 @@ export class App {
     const allObservations = await repositories.observations.list();
     const importedObservationIds = allObservations.filter((o) => o.id.startsWith('obs_import_')).map((o) => o.id);
     const persistedTasks = await repositories.tasks.list();
+    const { field: realField } = await ensureRealTestField(world);
     return new App(
       repositories,
       world,
@@ -216,7 +233,8 @@ export class App {
       sourcesByName['CSV Agricultural Data Import'],
       sourcesByName['GeoJSON Field Boundary Import'],
       importedObservationIds,
-      persistedTasks
+      persistedTasks,
+      realField
     );
   }
 
@@ -347,6 +365,13 @@ export class App {
       const open = this.researchPanel.toggle();
       if (open) this.renderResearch();
       setButtonActive('btnResearch', open);
+    });
+
+    this.satellitePanel.onFetchRequested = () => void this.fetchRealSentinelData();
+    document.getElementById('btnSatellite')?.addEventListener('click', () => {
+      const open = this.satellitePanel.toggle();
+      setButtonActive('btnSatellite', open);
+      if (open) this.renderSatellite();
     });
 
     document.getElementById('btnGeoView')?.addEventListener('click', () => {
@@ -704,6 +729,96 @@ export class App {
     });
 
     this.researchPanel.render({ explanation, decisionTrace, experiment, catalog });
+  }
+
+  /** Renders the satellite panel from whatever satelliteState currently is — never triggers a fetch itself (see fetchRealSentinelData). */
+  private renderSatellite(): void {
+    this.satellitePanel.render(this.satelliteState);
+    const canvas = document.getElementById('satelliteFieldCanvas') as HTMLCanvasElement | null;
+    if (!canvas) return;
+    this.satelliteFieldView = new SatelliteFieldView(canvas);
+
+    const geoRef = this.realField.geoReference;
+    const fieldBoundary = geoRef.kind === 'geodetic' && geoRef.geometry.type === 'Polygon' ? geoRef.geometry : null;
+    if (!fieldBoundary) return;
+
+    if (this.satelliteState.status === 'READY') {
+      this.satelliteFieldView.draw({ status: 'READY', fieldBoundary, grid: this.satelliteState.analysis.grid, ndviCells: this.satelliteState.analysis.ndviCells });
+    } else if (this.satelliteState.status === 'IDLE') {
+      this.satelliteFieldView.draw({ status: 'IDLE', message: 'Real field boundary shown — press Fetch for real NDVI.', fieldBoundary });
+    } else {
+      this.satelliteFieldView.draw({ status: this.satelliteState.status, message: this.satelliteState.message, fieldBoundary });
+    }
+  }
+
+  /**
+   * The one real, on-demand network operation this milestone adds: a live
+   * Sentinel-2 STAC search -> scene selection -> SAS-signed COG windowed
+   * read -> field clip -> real NDVI, run against `this.realField` (a real
+   * WGS84 location — see world/realTestField.ts — never the Null Island
+   * demo field). Every failure path sets an honest ERROR state with the
+   * real reason; nothing here ever fabricates a READY result.
+   */
+  private async fetchRealSentinelData(): Promise<void> {
+    if (this.satelliteFetchInFlight) return;
+    this.satelliteFetchInFlight = true;
+    this.satelliteState = { status: 'LOADING', message: 'Searching the real Sentinel-2 STAC catalog...' };
+    this.renderSatellite();
+
+    try {
+      const geoRef = this.realField.geoReference;
+      if (geoRef.kind !== 'geodetic' || geoRef.geometry.type !== 'Polygon') {
+        throw new Error('Real test field has no polygon geometry — cannot search by bounding box.');
+      }
+      const fieldBoundary = geoRef.geometry;
+      const bbox = boundingBox(fieldBoundary);
+
+      const now = new Date();
+      const start = new Date(now);
+      start.setDate(start.getDate() - 180);
+
+      const scenes = await this.sentinelProvider.search({
+        bbox,
+        dateRangeStartIso: start.toISOString(),
+        dateRangeEndIso: now.toISOString(),
+        maxCloudCoverPercent: 40,
+        limit: 20
+      });
+      const scene = this.sentinelProvider.selectBestScene(scenes, ['RED', 'NIR']);
+
+      this.satelliteState = { status: 'LOADING', message: `Reading real pixels from scene ${scene.itemId}...` };
+      this.renderSatellite();
+
+      const grid = await buildFieldRasterFromSentinelScene({
+        scene,
+        fieldBboxWgs84: bbox,
+        bands: ['RED', 'NIR'],
+        signHref: (href) => this.sentinelProvider.signAssetHref(href)
+      });
+
+      const analysis = analyzeFieldFromSentinelRaster({ grid, scene, fieldGeometry: fieldBoundary, fieldId: this.realField.id });
+      const dataset = createSentinelDatasetRecord({ analysis, fieldId: this.realField.id });
+      await this.world.registerDataset(dataset);
+
+      if (!this.registeredSentinelSource) {
+        await this.world.registerDataSource(createSentinelDataSourceRecord());
+        this.registeredSentinelSource = true;
+      }
+
+      const newObservations = analysis.ndviObservation ? [...analysis.rawBandObservations, analysis.ndviObservation] : analysis.rawBandObservations;
+      for (const obs of newObservations) {
+        this.observationLog.push(obs);
+        void this.repositories.observations.save(obs);
+      }
+
+      this.satelliteState = { status: 'READY', analysis, dataset };
+    } catch (error) {
+      const message = error instanceof SatelliteProviderError ? `${error.message} (${error.kind})` : (error as Error).message;
+      this.satelliteState = { status: 'ERROR', message };
+    } finally {
+      this.satelliteFetchInFlight = false;
+      this.renderSatellite();
+    }
   }
 
   private refreshSensorHealth(): void {

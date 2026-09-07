@@ -266,6 +266,10 @@
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
                 <span>Research</span>
             </button>
+            <button class="ctrl-btn" id="btnSatellite" title="Toggle real Sentinel-2 satellite data — live STAC search, real NDVI">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg>
+                <span>Satellite</span>
+            </button>
             <button class="ctrl-btn" id="btnReset" title="Reset View">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
                 <span>Reset</span>
@@ -358,6 +362,15 @@
             <span class="panel-status deferred">EXPLANATION + DECISION TRACE + WHAT-IF</span>
         </div>
         <div id="researchContent"></div>
+    </div>
+
+    <!-- Real Sentinel-2 Satellite Data (closed by default) -->
+    <div id="satellitePanel" class="hidden">
+        <div class="inspector-header">
+            <span>SENTINEL-2 — REAL EARTH OBSERVATION</span>
+            <span class="panel-status deferred">LIVE PUBLIC STAC — REAL FIELD, NOT NULL ISLAND</span>
+        </div>
+        <div id="satelliteContent"></div>
     </div>
 
     <!-- Data Import (closed by default) -->

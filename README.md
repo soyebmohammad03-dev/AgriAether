@@ -1033,6 +1033,73 @@ it is a second parallel system.
   (rows, field length, polygon vertices) against oversized/malicious input.
   No telemetry leaves the browser.
 
+## Real Earth observation: Sentinel-2 ("Push 1")
+
+The remote-sensing gap called out through every earlier phase — real
+vegetation-index math with no real imagery ever feeding it — is closed for
+the first time here, live-verified rather than assumed. Nothing in this
+section is a fixture.
+
+- **`src/satellite/SentinelStacProvider.ts`**: real Sentinel-2 L2A access
+  via Microsoft Planetary Computer's public STAC API — no API key for
+  search; individual band assets are Cloud-Optimized GeoTIFFs on Azure Blob
+  Storage that require a short-lived SAS token from Planetary Computer's
+  documented public `/api/sas/v1/sign` endpoint (never bypassed). Modeled
+  on `weather/OpenMeteoProvider.ts`'s injectable-fetch + timeout/error
+  pattern, not `data/DatasetProvider.ts`'s parameterless `discover()` (a
+  satellite search is inherently parameterized by bbox/date range).
+  Deterministic scene selection: must carry the required bands, must have a
+  known cloud-cover value, lowest cloud cover wins, most recent breaks
+  ties — never "first result."
+- **`src/satellite/SentinelRasterBuilder.ts`**: reads real pixels straight
+  out of the remote COG via HTTP range requests (the `geotiff` package —
+  never a full ~100MB+ band download) into the **existing**
+  `data/Raster.ts` `RasterGrid`/`RasterMetadata` — no parallel pixel-raster
+  type was introduced. The field's WGS84 bbox is reprojected into the
+  scene's native UTM zone with `proj4` (the zone is derived from the
+  scene's own `proj:epsg`, validated against Sentinel-2's actual UTM EPSG
+  ranges before use, never trusted blindly). Digital numbers are converted
+  to reflectance per ESA's documented, processing-baseline-dependent rule
+  (`/10000`, with a `-1000` offset for baseline ≥ 04.00) —
+  `satellite/SentinelReflectance.ts`.
+- **`src/satellite/SentinelFieldPipeline.ts`**: clip → per-pixel NDVI →
+  statistics → Observation, built entirely from **existing** modules —
+  `data/FieldClip.ts` for clipping, `data/SpatialStatistics.ts` for every
+  statistic (mean/min/max/median/stddev, none reimplemented),
+  `sensing/SpectralIndex.ts`'s own published NDVI formula for the per-pixel
+  math, and `sensing/IndexEngine.ts` + `sensing/indexResultToObservation.ts`
+  (unmodified) for the canonical field-mean Observation. Raw band
+  reflectance Observations are `provenance: 'EXTERNAL'`; the derived NDVI
+  Observation is `provenance: 'ESTIMATED'` — never `SIMULATED`, never
+  `PREDICTED`. A field that doesn't intersect the retrieved raster throws
+  rather than returning an empty-looking success.
+- **`src/world/realTestField.ts`**: a second, real, non-Null-Island WGS84
+  location (genuine Iowa cropland) alongside — never replacing — the
+  existing `DEMO_ONLY` demo field. Boundary provenance is honestly
+  `USER_DRAWN` (a hand-specified ~300m square), not `SURVEYED`.
+- **UI**: a new Satellite panel (`ui/SatellitePanel.ts` +
+  `ui/SatelliteFieldView.ts`, the latter reusing `ui/GeoView.ts`'s
+  projection approach for a second, independent field) with an explicit
+  "Fetch real Sentinel-2 imagery" button — this is a real, on-demand
+  network operation, never fetched automatically at startup. LOADING/ERROR
+  states render as honest text ("Satellite data temporarily unavailable:
+  …"); a failed fetch never produces a plausible-looking result.
+- **Security**: asset/sign URLs are allowlisted to Planetary Computer's own
+  hosts (`*.blob.core.windows.net`, `planetarycomputer.microsoft.com`) and
+  rejected otherwise; raster dimensions are capped (512×512) before any
+  pixel array is allocated; STAC/sign response sizes are capped before
+  parsing; every externally-sourced string (scene id, dataset name/source)
+  is HTML-escaped before display.
+- **Live-verified**: `satellite/SentinelIntegration.live.test.ts` performs
+  the complete real chain end to end and is skipped by default (enable
+  with `AGRIAETHER_LIVE_SATELLITE_TESTS=1`) — never part of normal/offline
+  CI, never silently "passing" without a real network call.
+- **Still not connected**: this milestone is deliberately Sentinel-2 (real
+  vegetation index) only — no drone imagery ingestion, no field
+  sectioning/management zones, no ML model, no crop-specific thresholds.
+  See `PublicDatasetEvaluation.ts`'s Sentinel-2 entry (`verdict:
+  'INTEGRATED'`) for the full accessibility/licensing/methodology record.
+
 ## Local development
 
 ```bash
@@ -1205,10 +1272,12 @@ pipeline without the UI changing at all.
   prediction request returns `NOT_AVAILABLE` with a stated reason. This is
   the single biggest remaining gap between "intelligence platform" and
   "intelligence platform with real intelligence in it."
-- **A real (non-`DEMO_ONLY`) field boundary / CRS pipeline exercised
-  end-to-end**, if/when real field data becomes available — the ingestion
-  and geometry code already supports arbitrary WGS84 polygons; only the
-  seeded demo world is Null-Island-anchored.
+- ~~A real (non-`DEMO_ONLY`) field boundary / CRS pipeline exercised
+  end-to-end~~ — done: `world/realTestField.ts` is a real, non-Null-Island
+  WGS84 field, and `satellite/` ingests real Sentinel-2 imagery against it
+  (see "Real Earth observation: Sentinel-2" above). Field sectioning/
+  management zones, drone imagery, and crop-specific thresholds remain
+  not started.
 - **Real hardware.** No flight controller, GPS, IMU, camera, or
   soil/environmental sensor is ever connected — `SimulatedFlightController`
   is the only implementation that can reach `CONNECTED`,
