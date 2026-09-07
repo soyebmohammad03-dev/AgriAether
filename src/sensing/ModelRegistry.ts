@@ -71,6 +71,41 @@ export function createModelRecord(params: {
  * Registering the contract now means the first real model has an interface
  * to implement instead of one invented under deadline pressure later.
  */
+export interface DatasetReadinessCheck {
+  task: ModelTask;
+  status: 'READY' | 'INSUFFICIENT_DATA';
+  reasons: string[];
+  labeledSampleCount: number;
+  minLabeledSamples: number;
+}
+
+/**
+ * Checks whether a real labeled dataset exists for a planned model, rather
+ * than either faking readiness or leaving it undocumented. `labeledSampleCount`
+ * must come from an actual count of agronomist-verified labels — this
+ * codebase has no such label taxonomy (CropObservation.observedCondition is
+ * free text, not a validated class), so calling this with a real count from
+ * the current world always yields 0 today. `minLabeledSamples` is a
+ * documented, deliberately conservative floor (not derived from any
+ * statistical power calculation) below which training would be scientific
+ * malpractice, not just "not yet optimal."
+ */
+export function assessDatasetReadiness(task: ModelTask, labeledSampleCount: number, minLabeledSamples = 50): DatasetReadinessCheck {
+  const reasons: string[] = [];
+  if (labeledSampleCount < minLabeledSamples) {
+    reasons.push(
+      `${labeledSampleCount} labeled sample(s) available for ${task}; at least ${minLabeledSamples} are required before training is defensible. CropObservation.observedCondition is free text, not a validated label taxonomy — no automated labeling exists in this codebase.`
+    );
+  }
+  return {
+    task,
+    status: reasons.length === 0 ? 'READY' : 'INSUFFICIENT_DATA',
+    reasons,
+    labeledSampleCount,
+    minLabeledSamples
+  };
+}
+
 export const PLANNED_MODELS: ModelRecord[] = [
   createModelRecord({
     name: 'Crop Segmentation (planned)',

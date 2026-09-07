@@ -9,6 +9,10 @@ import type { SensorKind } from '../domain/SensorRecord';
 import type { DataSourceRecord } from '../data/DataSource';
 import type { ImportReport } from '../data/ImportPipeline';
 import { summarizeSoilSampleQuality } from '../soil/SoilQuality';
+import type { WeatherWindowSummary, GrowingDegreeDaysResult } from '../weather/WeatherIntelligence';
+import type { FieldCropStatusSummary } from '../domain/CropStatusChange';
+import type { CropStressAssessment } from '../sensing/CropStressSignal';
+import type { DatasetReadinessCheck } from '../sensing/ModelRegistry';
 
 export interface SensorRegistryRow {
   kind: SensorKind;
@@ -47,9 +51,30 @@ export class DataCatalogPanel {
     sensorRegistry: SensorRegistryRow[];
     dataSources: DataSourceRecord[];
     importRecords: ImportReport[];
+    weatherWindow: WeatherWindowSummary | null;
+    growingDegreeDays: GrowingDegreeDaysResult | null;
+    cropStatus: FieldCropStatusSummary;
+    cropStress: CropStressAssessment;
+    modelReadiness: DatasetReadinessCheck;
   }): void {
     if (!this.content) return;
-    const { summary, gaps, missionRequirements, datasets, soilSamples, groundSamples, cropObservations, sensorRegistry, dataSources, importRecords } = params;
+    const {
+      summary,
+      gaps,
+      missionRequirements,
+      datasets,
+      soilSamples,
+      groundSamples,
+      cropObservations,
+      sensorRegistry,
+      dataSources,
+      importRecords,
+      weatherWindow,
+      growingDegreeDays,
+      cropStatus,
+      cropStress,
+      modelReadiness
+    } = params;
 
     const coverageRows = Object.entries(summary.coverage.sensorCoverage)
       .map(([category, status]) => `<div class="catalog-kv"><span>${category}</span><span class="${status === 'available' ? 'catalog-ok' : 'catalog-muted'}">${status}</span></div>`)
@@ -128,6 +153,43 @@ export class DataCatalogPanel {
           .join('')
       : '<div class="catalog-muted">No imports run yet. Use Import Data to bring in a real CSV or GeoJSON dataset.</div>';
 
+    const weatherIntelRows = weatherWindow && weatherWindow.windowDays > 0
+      ? [
+          `<div class="catalog-kv"><span>Window</span><span>${weatherWindow.windowDays} day(s), real Open-Meteo historical data</span></div>`,
+          `<div class="catalog-kv"><span>Max temp avg</span><span>${weatherWindow.tMaxAvgC !== null ? weatherWindow.tMaxAvgC.toFixed(1) + '°C' : 'no data'}</span></div>`,
+          `<div class="catalog-kv"><span>Min temp avg</span><span>${weatherWindow.tMinAvgC !== null ? weatherWindow.tMinAvgC.toFixed(1) + '°C' : 'no data'}</span></div>`,
+          `<div class="catalog-kv"><span>Precipitation total</span><span>${weatherWindow.precipitationTotalMm !== null ? weatherWindow.precipitationTotalMm.toFixed(1) + 'mm' : 'no data'}</span></div>`,
+          weatherWindow.missingTempDays > 0 ? `<div class="catalog-gap">${weatherWindow.missingTempDays} day(s) missing temperature data — excluded from averages, not assumed zero.</div>` : '',
+          growingDegreeDays
+            ? `<div class="catalog-kv"><span>Growing Degree Days (base ${growingDegreeDays.baseTempC}°C)</span><span>${growingDegreeDays.totalGdd.toFixed(1)} over ${growingDegreeDays.daysUsed} day(s)${growingDegreeDays.daysSkippedMissingData > 0 ? `, ${growingDegreeDays.daysSkippedMissingData} skipped (missing data)` : ''}</span></div>`
+            : ''
+        ].join('')
+      : '<div class="catalog-muted">No historical weather data fetched yet — see weather/OpenMeteoHistoricalProvider.ts. This requires a live network call at startup; if it failed, no fabricated values are shown in its place.</div>';
+
+    const cropStatusRows = cropStatus.observationCount > 0
+      ? [
+          `<div class="catalog-kv"><span>Observations recorded</span><span>${cropStatus.observationCount}</span></div>`,
+          `<div class="catalog-kv"><span>Latest growth stage</span><span>${cropStatus.latestGrowthStage}</span></div>`,
+          cropStatus.latestCultivar ? `<div class="catalog-kv"><span>Cultivar</span><span>${cropStatus.latestCultivar}</span></div>` : '',
+          cropStatus.recentComparison
+            ? `<div class="catalog-kv"><span>Progression since previous</span><span>${cropStatus.recentComparison.progression} (${cropStatus.recentComparison.fromStage} → ${cropStatus.recentComparison.toStage}, ${cropStatus.recentComparison.daySpan.toFixed(1)}d)</span></div>`
+            : '<div class="catalog-muted">Only one observation recorded — no progression comparison possible yet.</div>'
+        ].join('')
+      : '<div class="catalog-muted">No crop observations recorded for this field — no growth-stage progression can be computed.</div>';
+
+    const stressStatusClass = cropStress.status === 'ATTENTION' ? 'catalog-gap' : cropStress.status === 'NORMAL' ? 'catalog-ok' : 'catalog-muted';
+    const cropStressRows = [
+      `<div class="catalog-kv"><span>Status</span><span class="${stressStatusClass}">${cropStress.status}</span></div>`,
+      cropStress.signals.length
+        ? cropStress.signals.map((s) => `<div class="catalog-gap">${s.description}</div>`).join('')
+        : '<div class="catalog-muted">No stress signals detected from available evidence.</div>',
+      cropStress.missingEvidence.length
+        ? `<div class="catalog-muted">Missing evidence categories: ${cropStress.missingEvidence.join(', ')}.</div>`
+        : '',
+      `<div class="catalog-muted">Evidence-based correlation flags only — never a disease diagnosis, causal claim, or treatment recommendation. See sensing/CropStressSignal.ts.</div>`,
+      `<div class="catalog-kv"><span>Crop Stress Classification model</span><span class="catalog-muted">NOT_DEPLOYED — ${modelReadiness.status}${modelReadiness.reasons[0] ? `: ${modelReadiness.reasons[0]}` : ''}</span></div>`
+    ].join('');
+
     const registryRows = sensorRegistry
       .map(
         (row) =>
@@ -150,6 +212,9 @@ export class DataCatalogPanel {
       `<div class="catalog-section"><h4>Data Sources</h4>${sourceRows}</div>`,
       `<div class="catalog-section"><h4>Import History</h4>${importRows}</div>`,
       `<div class="catalog-section"><h4>Ground Observations</h4>${soilRows}${groundRows}${cropRows}</div>`,
+      `<div class="catalog-section"><h4>Weather Intelligence</h4>${weatherIntelRows}</div>`,
+      `<div class="catalog-section"><h4>Crop Status</h4>${cropStatusRows}</div>`,
+      `<div class="catalog-section"><h4>Crop Stress Signals</h4>${cropStressRows}</div>`,
       `<div class="catalog-section"><h4>Sensor Capability Registry</h4><div class="catalog-muted">Every sensor kind AgriAether's domain model can represent, cross-checked against what is actually deployed — never a live reading invented for a kind with no hardware.</div>${registryRows}</div>`
     ].join('');
   }

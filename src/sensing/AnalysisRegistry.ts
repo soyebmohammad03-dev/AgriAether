@@ -6,7 +6,7 @@ export type AnalysisAvailability = 'SUPPORTED' | 'UNSUPPORTED';
 export interface AnalysisDefinition {
   id: string;
   name: string;
-  category: 'VEGETATION_INDEX' | 'THERMAL' | 'CHANGE_DETECTION' | 'AGGREGATION';
+  category: 'VEGETATION_INDEX' | 'THERMAL' | 'CHANGE_DETECTION' | 'AGGREGATION' | 'WEATHER' | 'CROP_STATUS' | 'CROP_STRESS';
   description: string;
   /** At least one deployed sensor of one of these kinds must exist for this analysis to be attemptable at all. */
   requiredSensorKinds: SensorKind[];
@@ -54,6 +54,33 @@ const OTHER_ANALYSES: AnalysisDefinition[] = [
     requiredSensorKinds: [],
     inputSummary: 'One or more Observations sharing type and zoneId',
     outputSummary: 'A statistic distinct from any individual raw reading'
+  },
+  {
+    id: 'weather:agricultural_indicators',
+    name: 'Weather Agricultural Indicators',
+    category: 'WEATHER',
+    description: 'Growing Degree Days and window summaries computed from real daily historical weather records',
+    requiredSensorKinds: [],
+    inputSummary: 'One or more DailyWeatherRecords from OpenMeteoHistoricalProvider',
+    outputSummary: 'Total GDD, temperature/precipitation window averages, explicit missing-day counts'
+  },
+  {
+    id: 'crop_status:growth_stage_progression',
+    name: 'Crop Growth Stage Progression',
+    category: 'CROP_STATUS',
+    description: 'Compares consecutive CropObservations for a field to report ADVANCED/UNCHANGED/REGRESSED',
+    requiredSensorKinds: [],
+    inputSummary: 'Two or more CropObservations for the same field',
+    outputSummary: 'ADVANCED | UNCHANGED | REGRESSED | UNKNOWN, with day span'
+  },
+  {
+    id: 'crop_stress:evidence_aggregation',
+    name: 'Crop Stress Evidence Aggregation',
+    category: 'CROP_STRESS',
+    description: 'Combines vegetation index, soil quality, weather, and crop observation evidence into correlation flags — never a diagnosis',
+    requiredSensorKinds: [],
+    inputSummary: 'Whatever subset of vegetation index / soil sample / weather / crop observation evidence currently exists for the field',
+    outputSummary: 'NORMAL | ATTENTION | INSUFFICIENT_DATA, with listed signals and missing evidence'
   }
 ];
 

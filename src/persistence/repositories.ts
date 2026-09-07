@@ -13,6 +13,7 @@ import type { GroundSample } from '../sensors/GroundSample';
 import type { CropObservation } from '../domain/CropObservation';
 import type { DataSourceRecord } from '../data/DataSource';
 import type { ImportReport } from '../data/ImportPipeline';
+import type { DailyWeatherRecord } from '../weather/DailyWeatherRecord';
 import type { Repository } from './Repository';
 import { InMemoryRepository } from './InMemoryRepository';
 import { IndexedDbRepository } from './IndexedDbRepository';
@@ -33,6 +34,7 @@ export interface AgriAetherRepositories {
   cropObservations: Repository<CropObservation>;
   dataSources: Repository<DataSourceRecord>;
   importRecords: Repository<ImportReport>;
+  dailyWeatherRecords: Repository<DailyWeatherRecord>;
 }
 
 export function createInMemoryRepositories(): AgriAetherRepositories {
@@ -51,7 +53,8 @@ export function createInMemoryRepositories(): AgriAetherRepositories {
     groundSamples: new InMemoryRepository<GroundSample>(),
     cropObservations: new InMemoryRepository<CropObservation>(),
     dataSources: new InMemoryRepository<DataSourceRecord>(),
-    importRecords: new InMemoryRepository<ImportReport>()
+    importRecords: new InMemoryRepository<ImportReport>(),
+    dailyWeatherRecords: new InMemoryRepository<DailyWeatherRecord>()
   };
 }
 
@@ -71,7 +74,8 @@ export function createIndexedDbRepositories(): AgriAetherRepositories {
     groundSamples: new IndexedDbRepository<GroundSample>('groundSamples'),
     cropObservations: new IndexedDbRepository<CropObservation>('cropObservations'),
     dataSources: new IndexedDbRepository<DataSourceRecord>('dataSources'),
-    importRecords: new IndexedDbRepository<ImportReport>('importRecords')
+    importRecords: new IndexedDbRepository<ImportReport>('importRecords'),
+    dailyWeatherRecords: new IndexedDbRepository<DailyWeatherRecord>('dailyWeatherRecords')
   };
 }
 

@@ -11,6 +11,7 @@ import type { GroundSample } from '../sensors/GroundSample';
 import type { CropObservation } from '../domain/CropObservation';
 import type { DataSourceRecord } from '../data/DataSource';
 import type { ImportReport } from '../data/ImportPipeline';
+import type { DailyWeatherRecord } from '../weather/DailyWeatherRecord';
 import type { AgriAetherRepositories } from '../persistence/repositories';
 
 /**
@@ -37,12 +38,13 @@ export class WorldRegistry {
   private readonly cropObservations = new Map<string, CropObservation>();
   private readonly dataSources = new Map<string, DataSourceRecord>();
   private readonly importRecords = new Map<string, ImportReport>();
+  private readonly dailyWeatherRecords = new Map<string, DailyWeatherRecord>();
 
   private constructor(private readonly repositories: AgriAetherRepositories) {}
 
   static async load(repositories: AgriAetherRepositories): Promise<WorldRegistry> {
     const registry = new WorldRegistry(repositories);
-    const [farms, fields, zones, cropCycles, sensors, deployments, events, datasets, soilSamples, groundSamples, cropObservations, dataSources, importRecords] = await Promise.all([
+    const [farms, fields, zones, cropCycles, sensors, deployments, events, datasets, soilSamples, groundSamples, cropObservations, dataSources, importRecords, dailyWeatherRecords] = await Promise.all([
       repositories.farms.list(),
       repositories.fields.list(),
       repositories.zones.list(),
@@ -55,7 +57,8 @@ export class WorldRegistry {
       repositories.groundSamples.list(),
       repositories.cropObservations.list(),
       repositories.dataSources.list(),
-      repositories.importRecords.list()
+      repositories.importRecords.list(),
+      repositories.dailyWeatherRecords.list()
     ]);
     for (const farm of farms) registry.farms.set(farm.id, farm);
     for (const field of fields) registry.fields.set(field.id, field);
@@ -70,6 +73,7 @@ export class WorldRegistry {
     for (const observation of cropObservations) registry.cropObservations.set(observation.id, observation);
     for (const source of dataSources) registry.dataSources.set(source.id, source);
     for (const record of importRecords) registry.importRecords.set(record.id, record);
+    for (const record of dailyWeatherRecords) registry.dailyWeatherRecords.set(record.id, record);
     return registry;
   }
 
@@ -272,5 +276,16 @@ export class WorldRegistry {
 
   listImportRecords(): ImportReport[] {
     return Array.from(this.importRecords.values()).sort((a, b) => b.startedAt - a.startedAt);
+  }
+
+  /** Idempotent by id — re-fetching an unchanged historical day overwrites with identical content rather than duplicating. */
+  async recordDailyWeather(record: DailyWeatherRecord): Promise<DailyWeatherRecord> {
+    this.dailyWeatherRecords.set(record.id, record);
+    await this.repositories.dailyWeatherRecords.save(record);
+    return record;
+  }
+
+  listDailyWeatherRecords(): DailyWeatherRecord[] {
+    return Array.from(this.dailyWeatherRecords.values()).sort((a, b) => a.date.localeCompare(b.date));
   }
 }

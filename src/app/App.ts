@@ -37,6 +37,20 @@ import { ImportPanel } from '../ui/ImportPanel';
 import { builtInDataSources, type DataSourceRecord } from '../data/DataSource';
 import { createField } from '../domain/Field';
 import type { CsvImportResult, FieldBoundaryImportResult } from '../data/ImportPipeline';
+import { OpenMeteoHistoricalProvider } from '../weather/OpenMeteoHistoricalProvider';
+import { dailyWeatherRecordToObservations } from '../weather/dailyWeatherRecordToObservations';
+import { summarizeWeatherWindow, growingDegreeDays as computeGrowingDegreeDays } from '../weather/WeatherIntelligence';
+import type { DailyWeatherRecord } from '../weather/DailyWeatherRecord';
+import { createDatasetRecord } from '../data/Dataset';
+import { summarizeFieldCropStatus } from '../domain/CropStatusChange';
+import { assessCropStress } from '../sensing/CropStressSignal';
+import { assessDatasetReadiness } from '../sensing/ModelRegistry';
+import { summarizeSoilSampleQuality } from '../soil/SoilQuality';
+
+/** Days of historical weather fetched once at startup — enough for a real Growing Degree Days window without an oversized request. */
+const WEATHER_HISTORY_DAYS = 14;
+/** Documented generic GDD base temperature (°C) — common for maize; this app has no per-crop calibration, see WeatherIntelligence.ts. */
+const GDD_BASE_TEMP_C = 10;
 
 const CAMERA_BUTTON_IDS: Record<CameraMode, string> = {
   orbit: 'btnOrbit',
@@ -75,6 +89,8 @@ export class App {
     this.flightPathVisual.curve.getPoints(80)
   );
   private readonly weatherService: WeatherService;
+  private readonly weatherHistoryProvider = new OpenMeteoHistoricalProvider();
+  private dailyWeatherRecords: DailyWeatherRecord[] = [];
   private geoView: GeoView | null = null;
   private geoViewOpen = false;
   private latestWeather: Awaited<ReturnType<WeatherService['getCurrentWeather']>> = null;
@@ -127,6 +143,8 @@ export class App {
 
     void this.refreshWeather();
     setInterval(() => void this.refreshWeather(), WEATHER_REFRESH_INTERVAL_MS);
+
+    void this.refreshWeatherHistory();
   }
 
   /**
@@ -373,17 +391,40 @@ export class App {
       deployedCount: deployedSensors.filter((s) => s.kind === kind).length
     }));
 
+    const soilSamples = this.world.listSoilSamplesForField(field.id);
+    const cropObservations = this.world.listCropObservationsForField(field.id);
+    const latestSoilSample = soilSamples.length > 0 ? soilSamples.reduce((a, b) => (b.timestamp > a.timestamp ? b : a)) : null;
+    const latestSoilQuality = latestSoilSample ? summarizeSoilSampleQuality(latestSoilSample) : null;
+    const latestDailyWeather = this.dailyWeatherRecords.length > 0 ? this.dailyWeatherRecords[this.dailyWeatherRecords.length - 1] : null;
+    const cropStatus = summarizeFieldCropStatus(field.id, cropObservations);
+
+    const cropStress = assessCropStress({
+      fieldId: field.id,
+      vegetationIndex: null, // no multispectral sensor deployed in this world — never fabricated
+      soilMoistureStatus: latestSoilQuality?.moistureStatus ?? null,
+      soilEcStatus: latestSoilQuality?.ecStatus ?? null,
+      soilSampleId: latestSoilSample?.id ?? null,
+      recentTMaxC: latestDailyWeather?.tMaxC ?? null,
+      weatherObservationId: latestDailyWeather?.id ?? null,
+      hasCropObservation: cropObservations.length > 0
+    });
+
     this.dataCatalogPanel.render({
       summary,
       gaps,
       missionRequirements,
       datasets,
-      soilSamples: this.world.listSoilSamplesForField(field.id),
+      soilSamples,
       groundSamples: this.world.listGroundSamplesForField(field.id),
-      cropObservations: this.world.listCropObservationsForField(field.id),
+      cropObservations,
       sensorRegistry,
       dataSources: this.world.listDataSources(),
-      importRecords: this.world.listImportRecords()
+      importRecords: this.world.listImportRecords(),
+      weatherWindow: this.dailyWeatherRecords.length > 0 ? summarizeWeatherWindow(this.dailyWeatherRecords) : null,
+      growingDegreeDays: this.dailyWeatherRecords.length > 0 ? computeGrowingDegreeDays(this.dailyWeatherRecords, GDD_BASE_TEMP_C) : null,
+      cropStatus,
+      cropStress,
+      modelReadiness: assessDatasetReadiness('CROP_STRESS_CLASSIFICATION', 0)
     });
   }
 
@@ -416,6 +457,52 @@ export class App {
       // unexpected (e.g. the cache repository itself failing). The simulator must keep running either way.
       console.warn('[AgriAether] weather refresh failed unexpectedly:', error);
       this.weatherPanel.update(null);
+    }
+  }
+
+  /**
+   * Fetches real daily historical weather once at startup (Milestone: Real
+   * Dataset Foundation) — a live network call, not a fixture. On failure
+   * (offline, provider unreachable), this.dailyWeatherRecords simply stays
+   * whatever was already persisted from a previous successful fetch (or
+   * empty) — the Data Catalog's Weather Intelligence section renders that
+   * honestly rather than inventing values.
+   */
+  private async refreshWeatherHistory(): Promise<void> {
+    try {
+      const records = await this.weatherHistoryProvider.fetchDailyHistory(DEMO_FIELD_ANCHOR, WEATHER_HISTORY_DAYS);
+      for (const record of records) {
+        await this.world.recordDailyWeather(record);
+        const observations = dailyWeatherRecordToObservations(record, { farmId: this.worldIds.farmId, fieldId: this.worldIds.fieldId });
+        for (const obs of observations) {
+          this.observationLog.push(obs);
+          void this.repositories.observations.save(obs);
+        }
+      }
+      this.dailyWeatherRecords = this.world.listDailyWeatherRecords();
+
+      if (records.length > 0 && !this.world.listDatasets().some((d) => d.name === 'Open-Meteo Historical Daily Weather')) {
+        await this.world.registerDataset(
+          createDatasetRecord({
+            name: 'Open-Meteo Historical Daily Weather',
+            provider: 'Open-Meteo',
+            source: 'https://api.open-meteo.com/v1/forecast (daily, past_days)',
+            type: 'WEATHER',
+            acquiredAtStart: Date.parse(`${records[0].date}T00:00:00Z`),
+            acquiredAtEnd: Date.parse(`${records[records.length - 1].date}T00:00:00Z`),
+            spatialExtent: [DEMO_FIELD_ANCHOR.lon, DEMO_FIELD_ANCHOR.lat, DEMO_FIELD_ANCHOR.lon, DEMO_FIELD_ANCHOR.lat],
+            crs: 'EPSG:4326',
+            license: 'CC BY 4.0',
+            attribution: 'Weather data by Open-Meteo.com',
+            provenance: 'EXTERNAL',
+            quality: 'VALID',
+            fieldId: this.worldIds.fieldId
+          })
+        );
+      }
+      if (this.dataCatalogPanel) this.renderDataCatalog();
+    } catch (error) {
+      console.warn('[AgriAether] weather history fetch failed unexpectedly:', error);
     }
   }
 

@@ -806,6 +806,79 @@ remains intentionally `UnconfiguredSoilProvider` — see Phase 6's reasoning
 above, unchanged), and no ML/ disease detection/crop-health scoring
 (explicitly out of scope, per the roadmap).
 
+## Consolidated agricultural intelligence milestone (Phase 9)
+
+Merges several roadmap phases into one pass, all built on the existing
+Observation/provenance/Dataset/DataSource/WorldRegistry architecture — no
+competing abstractions, no backend, no new dependencies.
+
+- **A second real external dataset** (`weather/OpenMeteoHistoricalProvider.ts`):
+  daily historical weather (max/min temperature, precipitation) from
+  Open-Meteo's `past_days` parameter — the same keyless, CORS-safe provider
+  already vetted for current conditions, now exercised against a genuinely
+  different endpoint/shape. Normalized via `normalizeOpenMeteoDaily.ts` into
+  `DailyWeatherRecord`s (deterministic id, so a re-fetch overwrites rather
+  than duplicates), registered as a `DataSourceRecord`
+  (`ingestionStatus: CONNECTED`) and a `DatasetRecord` (type `WEATHER`,
+  license CC BY 4.0, attributed), and exploded into canonical `Observation`s
+  via `dailyWeatherRecordToObservations.ts` — the same conversion pattern
+  every other real data path in this codebase uses. Fetched once at app
+  startup; a failed fetch degrades to an honest empty state, never a
+  fabricated value (see `App.refreshWeatherHistory`).
+- **Weather intelligence** (`weather/WeatherIntelligence.ts`): window
+  summaries (temperature averages, precipitation total) and Growing Degree
+  Days — a standard, documented agronomic formula, computed only from days
+  with complete real data; a day missing a field is excluded and counted in
+  `missingTempDays`/`daysSkippedMissingData`, never assumed zero or
+  interpolated.
+- **Crop intelligence** (`domain/CropStatusChange.ts`): deterministic
+  growth-stage progression (`ADVANCED`/`UNCHANGED`/`REGRESSED`/`UNKNOWN`,
+  ordered by `GrowthStage`'s existing sequence) between consecutive
+  `CropObservation`s for a field, and a per-field status summary — no score,
+  no health index, only what was actually recorded.
+- **Vegetation-index Observations** (`sensing/indexResultToObservation.ts`):
+  converts a successful `IndexEngine.calculateIndex` result into the
+  canonical `Observation` shape, so `TemporalChange.ts` and
+  `SpatialAggregation.ts` (both already generic over any
+  `Observation<number>`) work on vegetation indices for free. Returns
+  `null` — never a placeholder — for anything other than `status: 'OK'`.
+- **Crop stress foundation** (`sensing/CropStressSignal.ts`):
+  `assessCropStress` combines whatever real evidence currently exists
+  (vegetation index, soil moisture/EC status, recent max temperature, crop
+  observation presence) into named correlation flags
+  (`low_vegetation_index`, `soil_moisture_deficit`,
+  `elevated_soil_salinity`, `heat_stress_conditions`) with a status of
+  `NORMAL` / `ATTENTION` / `INSUFFICIENT_DATA` and an explicit
+  `missingEvidence` list. Deliberately not a diagnosis: no disease claim, no
+  causal claim, no treatment recommendation — see the module's own doc
+  comment.
+- **ML dataset readiness** (`sensing/ModelRegistry.ts`'s new
+  `assessDatasetReadiness`): rather than fabricate a model or its metrics,
+  this milestone adds a readiness check against `PLANNED_MODELS`'
+  `CROP_STRESS_CLASSIFICATION` entry. Called with the real labeled-sample
+  count (always 0 in this repository — `CropObservation.observedCondition`
+  is free text, not a validated label taxonomy), it returns
+  `INSUFFICIENT_DATA` with the specific reason and the documented minimum
+  (50 samples) required before training would be defensible. The model
+  stays `NOT_DEPLOYED`, exactly as `ModelRegistry.ts` already required.
+- **UI**: three new Data Catalog sections (Weather Intelligence, Crop
+  Status, Crop Stress Signals) and three new `AnalysisRegistry` entries
+  (`weather:agricultural_indicators`, `crop_status:growth_stage_progression`,
+  `crop_stress:evidence_aggregation`), following the exact rendering pattern
+  every prior section already uses — real data or an honest empty state,
+  never a decorative number.
+
+**What this milestone deliberately does not include**: no trained ML model
+(no defensible labeled dataset exists — see dataset readiness above); no
+disease detection, no crop-health score, no fertilizer/pesticide
+recommendation; no new raster/imagery capability beyond wiring vegetation
+indices into the existing generic Observation-based change/aggregation
+tools (no camera sensor is deployed in this world, so no vegetation-index
+Observation is ever actually produced by the live app — the conversion
+path is real and tested, but has nothing to convert without real
+multispectral data); no spatial interpolation between soil samples or
+between the historical weather point and the field boundary.
+
 ## Security
 
 Vite bundles any `VITE_`-prefixed environment variable straight into the
@@ -833,7 +906,9 @@ contract the domain layer depends on — nothing in `domain/`, `world/`, or
   A `weatherCache` object store was added in Phase 3 (schema version 2), a
   `datasets` store in Phase 5 (schema version 3), `soilSamples`/
   `groundSamples`/`cropObservations` stores in Phase 6 (schema version 4),
-  and `dataSources`/`importRecords` stores in Phase 7 (schema version 5) —
+  `dataSources`/`importRecords` stores in Phase 7 (schema version 5), and a
+  `dailyWeatherRecords` store in the Phase 9 consolidated milestone (schema
+  version 6) —
   each migration only adds missing stores, verified live to never touch
   existing data.
 - **InMemoryRepository** — a trivial Map-backed implementation used in tests

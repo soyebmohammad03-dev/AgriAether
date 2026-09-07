@@ -150,6 +150,22 @@ export function builtInDataSources(): DataSourceRecord[] {
       reliability: 'UNKNOWN',
       ingestionStatus: 'MANUAL_UPLOAD',
       notes: 'Geometry provenance (SURVEYED/USER_DRAWN/EXTERNAL) must be declared per import — see domain/GeoReference.ts.'
+    }),
+    createDataSourceRecord({
+      type: 'WEATHER_API',
+      provider: 'Open-Meteo',
+      name: 'Open-Meteo Historical Daily Weather',
+      version: 'v1/forecast (past_days)',
+      isExternal: true,
+      nature: 'EXTERNAL',
+      geographicCoverage: 'Global grid, interpolated to the requested lat/lon point',
+      temporalCoverageStart: null,
+      supportedObservationTypes: ['weather.daily_temp_max', 'weather.daily_temp_min', 'weather.daily_precipitation'],
+      license: 'CC BY 4.0',
+      attribution: 'Weather data by Open-Meteo.com',
+      reliability: 'HIGH',
+      ingestionStatus: 'CONNECTED',
+      notes: 'A second, genuinely distinct Open-Meteo dataset (daily historical aggregates) from the same keyless provider already used for current conditions — see weather/OpenMeteoHistoricalProvider.ts.'
     })
   ];
 }

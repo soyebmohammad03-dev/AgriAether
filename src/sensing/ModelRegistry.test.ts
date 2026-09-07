@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createModelRecord, PLANNED_MODELS } from './ModelRegistry';
+import { assessDatasetReadiness, createModelRecord, PLANNED_MODELS } from './ModelRegistry';
 
 describe('ModelRegistry', () => {
   it('every planned model is NOT_DEPLOYED — no fake model is presented as production-ready', () => {
@@ -53,5 +53,19 @@ describe('ModelRegistry', () => {
         limitations: 'validated only on the referenced dataset'
       })
     ).not.toThrow();
+  });
+});
+
+describe('assessDatasetReadiness', () => {
+  it('reports INSUFFICIENT_DATA with a specific reason when labeled samples are below the floor', () => {
+    const check = assessDatasetReadiness('CROP_STRESS_CLASSIFICATION', 0);
+    expect(check.status).toBe('INSUFFICIENT_DATA');
+    expect(check.reasons[0]).toMatch(/0 labeled sample/);
+  });
+
+  it('reports READY once the labeled sample count meets the floor', () => {
+    const check = assessDatasetReadiness('CROP_STRESS_CLASSIFICATION', 100, 50);
+    expect(check.status).toBe('READY');
+    expect(check.reasons).toHaveLength(0);
   });
 });
