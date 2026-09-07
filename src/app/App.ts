@@ -54,6 +54,11 @@ import { decideNextMission } from '../drone/AutonomyEngine';
 import { createFleetDrone, assignMission, type FleetDrone } from '../fleet/Fleet';
 import { SimulatedFlightController } from '../hardware/HardwareInterface';
 import { OperationsPanel } from '../ui/OperationsPanel';
+import { FarmerPanel } from '../ui/FarmerPanel';
+import { buildFarmerOverview } from '../farmer/FarmerInsights';
+import { tasksFromRecommendations, transitionTask, type FarmTask, type TaskStatus } from '../farmer/Task';
+import { deriveSyncStatus } from '../offline/OfflineSync';
+import type { LanguageCode } from '../i18n/i18n';
 
 /** Days of historical weather fetched once at startup — enough for a real Growing Degree Days window without an oversized request. */
 const WEATHER_HISTORY_DAYS = 14;
@@ -91,6 +96,10 @@ export class App {
   private readonly dataCatalogPanel = new DataCatalogPanel();
   private readonly twinPanel = new TwinPanel();
   private readonly operationsPanel = new OperationsPanel();
+  private readonly farmerPanel = new FarmerPanel();
+  private tasks: FarmTask[] = [];
+  private readonly knownTaskProvenance = new Set<string>();
+  private language: LanguageCode = 'en';
   private readonly simulatedFlightController = new SimulatedFlightController('flight_controller_1', [{ kind: 'flight-controller', observationTypes: ['drone.position', 'drone.orientation'] }]);
   private readonly importPanel: ImportPanel;
   private readonly importedObservationIds = new Set<string>();
@@ -121,10 +130,18 @@ export class App {
     private readonly telemetryGenerator: TelemetryGenerator,
     csvSource: DataSourceRecord,
     geojsonSource: DataSourceRecord,
-    importedObservationIds: string[]
+    importedObservationIds: string[],
+    persistedTasks: FarmTask[]
   ) {
     this.weatherService = new WeatherService(new OpenMeteoProvider(), repositories.weatherCache);
     for (const id of importedObservationIds) this.importedObservationIds.add(id);
+    this.tasks = persistedTasks;
+    for (const task of persistedTasks) this.knownTaskProvenance.add(task.provenance);
+    this.farmerPanel.onLanguageChange = (lang) => {
+      this.language = lang;
+      this.renderFarmer();
+    };
+    this.farmerPanel.onTaskAction = (taskId, action) => this.handleTaskAction(taskId, action);
     this.importPanel = new ImportPanel({
       farmId: this.worldIds.farmId,
       csvSource,
@@ -183,6 +200,7 @@ export class App {
     const sourcesByName = await App.ensureBuiltInDataSources(world);
     const allObservations = await repositories.observations.list();
     const importedObservationIds = allObservations.filter((o) => o.id.startsWith('obs_import_')).map((o) => o.id);
+    const persistedTasks = await repositories.tasks.list();
     return new App(
       repositories,
       world,
@@ -190,7 +208,8 @@ export class App {
       generator,
       sourcesByName['CSV Agricultural Data Import'],
       sourcesByName['GeoJSON Field Boundary Import'],
-      importedObservationIds
+      importedObservationIds,
+      persistedTasks
     );
   }
 
@@ -309,6 +328,12 @@ export class App {
       const open = this.operationsPanel.toggle();
       if (open) this.renderOperations();
       setButtonActive('btnOps', open);
+    });
+
+    document.getElementById('btnFarmer')?.addEventListener('click', () => {
+      const open = this.farmerPanel.toggle();
+      if (open) this.renderFarmer();
+      setButtonActive('btnFarmer', open);
     });
 
     document.getElementById('btnGeoView')?.addEventListener('click', () => {
@@ -566,6 +591,53 @@ export class App {
         provenance: this.simulatedFlightController.provenance
       }
     });
+  }
+
+  /**
+   * The farmer-facing view: same Digital Twin + AutonomyEngine decision as
+   * the operator Ops panel, rephrased into plain language (see
+   * farmer/FarmerInsights.ts) with lightweight tasks derived from
+   * recommendations. New tasks are created once per recommendation
+   * (deduped by provenance) and persisted — re-opening this panel never
+   * duplicates an existing task or silently drops a farmer's status change.
+   */
+  private renderFarmer(): void {
+    const field = this.world.getField(this.worldIds.fieldId);
+    if (!field) return;
+
+    const { twin } = this.computeTwinForField(field);
+    const availableSensorKinds = this.world.listSensors().map((s) => s.kind);
+    const missionDecision = decideNextMission({ twin, geoReference: field.geoReference, availableSensorKinds });
+
+    const newTasks = tasksFromRecommendations(twin.recommendations).filter((t) => !this.knownTaskProvenance.has(t.provenance));
+    for (const task of newTasks) {
+      this.knownTaskProvenance.add(task.provenance);
+      this.tasks.push(task);
+      void this.repositories.tasks.save(task);
+    }
+
+    const overview = buildFarmerOverview({ twin, missionDecision });
+    const syncStatus = deriveSyncStatus({ hasRemoteEndpoint: false, error: null });
+
+    this.farmerPanel.render({
+      overview,
+      tasks: this.tasks.filter((t) => t.fieldId === field.id && t.status !== 'COMPLETED' && t.status !== 'DISMISSED'),
+      syncStatus,
+      language: this.language
+    });
+  }
+
+  private handleTaskAction(taskId: string, action: TaskStatus): void {
+    const index = this.tasks.findIndex((t) => t.id === taskId);
+    if (index === -1) return;
+    try {
+      const updated = transitionTask(this.tasks[index], action);
+      this.tasks[index] = updated;
+      void this.repositories.tasks.save(updated);
+    } catch {
+      // Stale button click against a task whose status already moved on — ignore rather than crash the panel.
+    }
+    this.renderFarmer();
   }
 
   private refreshSensorHealth(): void {

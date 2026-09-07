@@ -1,5 +1,5 @@
 export const DATABASE_NAME = 'agriaether';
-export const DATABASE_VERSION = 6;
+export const DATABASE_VERSION = 7;
 
 /** One object store per repository, all keyed by the entity's own `id`. */
 export const STORE_NAMES = [
@@ -18,7 +18,9 @@ export const STORE_NAMES = [
   'cropObservations',
   'dataSources',
   'importRecords',
-  'dailyWeatherRecords'
+  'dailyWeatherRecords',
+  'tasks',
+  'communityContributions'
 ] as const;
 
 export type StoreName = (typeof STORE_NAMES)[number];

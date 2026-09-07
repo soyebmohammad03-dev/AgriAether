@@ -14,6 +14,8 @@ import type { CropObservation } from '../domain/CropObservation';
 import type { DataSourceRecord } from '../data/DataSource';
 import type { ImportReport } from '../data/ImportPipeline';
 import type { DailyWeatherRecord } from '../weather/DailyWeatherRecord';
+import type { FarmTask } from '../farmer/Task';
+import type { CommunityContribution } from '../community/CommunityContribution';
 import type { Repository } from './Repository';
 import { InMemoryRepository } from './InMemoryRepository';
 import { IndexedDbRepository } from './IndexedDbRepository';
@@ -35,6 +37,8 @@ export interface AgriAetherRepositories {
   dataSources: Repository<DataSourceRecord>;
   importRecords: Repository<ImportReport>;
   dailyWeatherRecords: Repository<DailyWeatherRecord>;
+  tasks: Repository<FarmTask>;
+  communityContributions: Repository<CommunityContribution>;
 }
 
 export function createInMemoryRepositories(): AgriAetherRepositories {
@@ -54,7 +58,9 @@ export function createInMemoryRepositories(): AgriAetherRepositories {
     cropObservations: new InMemoryRepository<CropObservation>(),
     dataSources: new InMemoryRepository<DataSourceRecord>(),
     importRecords: new InMemoryRepository<ImportReport>(),
-    dailyWeatherRecords: new InMemoryRepository<DailyWeatherRecord>()
+    dailyWeatherRecords: new InMemoryRepository<DailyWeatherRecord>(),
+    tasks: new InMemoryRepository<FarmTask>(),
+    communityContributions: new InMemoryRepository<CommunityContribution>()
   };
 }
 
@@ -75,7 +81,9 @@ export function createIndexedDbRepositories(): AgriAetherRepositories {
     cropObservations: new IndexedDbRepository<CropObservation>('cropObservations'),
     dataSources: new IndexedDbRepository<DataSourceRecord>('dataSources'),
     importRecords: new IndexedDbRepository<ImportReport>('importRecords'),
-    dailyWeatherRecords: new IndexedDbRepository<DailyWeatherRecord>('dailyWeatherRecords')
+    dailyWeatherRecords: new IndexedDbRepository<DailyWeatherRecord>('dailyWeatherRecords'),
+    tasks: new IndexedDbRepository<FarmTask>('tasks'),
+    communityContributions: new IndexedDbRepository<CommunityContribution>('communityContributions')
   };
 }
 
