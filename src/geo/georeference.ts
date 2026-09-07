@@ -26,3 +26,12 @@ export function simulationLocalToDemoGeodetic(
     lon: anchor.lon + local.x / metersPerDegreeLongitude
   };
 }
+
+/** Inverse of simulationLocalToDemoGeodetic — same DEMO_ONLY accuracy caveats apply. Only valid for geometry actually anchored at `anchor` in the simulated scene. */
+export function demoGeodeticToSimulationLocal(anchor: { lat: number; lon: number }, geo: { lat: number; lon: number }): { x: number; z: number } {
+  const metersPerDegreeLongitude = METERS_PER_DEGREE_LATITUDE * Math.cos((anchor.lat * Math.PI) / 180);
+  return {
+    x: (geo.lon - anchor.lon) * metersPerDegreeLongitude,
+    z: (geo.lat - anchor.lat) * METERS_PER_DEGREE_LATITUDE
+  };
+}

@@ -35,7 +35,7 @@ import { SENSOR_CAPABILITY_CATALOG } from '../sensing/SensorCapabilityCatalog';
 import type { SensorKind } from '../domain/SensorRecord';
 import { ImportPanel } from '../ui/ImportPanel';
 import { builtInDataSources, type DataSourceRecord } from '../data/DataSource';
-import { createField } from '../domain/Field';
+import { createField, type Field } from '../domain/Field';
 import type { CsvImportResult, FieldBoundaryImportResult } from '../data/ImportPipeline';
 import { OpenMeteoHistoricalProvider } from '../weather/OpenMeteoHistoricalProvider';
 import { dailyWeatherRecordToObservations } from '../weather/dailyWeatherRecordToObservations';
@@ -49,6 +49,11 @@ import { summarizeSoilSampleQuality } from '../soil/SoilQuality';
 import { buildFieldTwin } from '../twin/FieldTwin';
 import { KnowledgeGraph } from '../graph/KnowledgeGraph';
 import { TwinPanel } from '../ui/TwinPanel';
+import type { DroneState } from '../drone/DroneState';
+import { decideNextMission } from '../drone/AutonomyEngine';
+import { createFleetDrone, assignMission, type FleetDrone } from '../fleet/Fleet';
+import { SimulatedFlightController } from '../hardware/HardwareInterface';
+import { OperationsPanel } from '../ui/OperationsPanel';
 
 /** Days of historical weather fetched once at startup — enough for a real Growing Degree Days window without an oversized request. */
 const WEATHER_HISTORY_DAYS = 14;
@@ -85,6 +90,8 @@ export class App {
   private readonly analysisRegistryPanel = new AnalysisRegistryPanel();
   private readonly dataCatalogPanel = new DataCatalogPanel();
   private readonly twinPanel = new TwinPanel();
+  private readonly operationsPanel = new OperationsPanel();
+  private readonly simulatedFlightController = new SimulatedFlightController('flight_controller_1', [{ kind: 'flight-controller', observationTypes: ['drone.position', 'drone.orientation'] }]);
   private readonly importPanel: ImportPanel;
   private readonly importedObservationIds = new Set<string>();
   private readonly observationLog = new ObservationLog();
@@ -98,6 +105,7 @@ export class App {
   private geoView: GeoView | null = null;
   private geoViewOpen = false;
   private latestWeather: Awaited<ReturnType<WeatherService['getCurrentWeather']>> = null;
+  private latestDroneState: DroneState | null = null;
   private readonly analysisEvaluations: AnalysisEvaluation[];
 
   private readonly clock = new THREE.Clock();
@@ -131,6 +139,7 @@ export class App {
     this.cameraRig.setMode('orbit');
     this.wireControls();
     this.simulation.start();
+    this.simulatedFlightController.connect();
     window.addEventListener('resize', () => resizeSceneBundle(this.bundle));
 
     const farm = this.world.getFarm(this.worldIds.farmId);
@@ -296,6 +305,12 @@ export class App {
       setButtonActive('btnTwin', open);
     });
 
+    document.getElementById('btnOps')?.addEventListener('click', () => {
+      const open = this.operationsPanel.toggle();
+      if (open) this.renderOperations();
+      setButtonActive('btnOps', open);
+    });
+
     document.getElementById('btnGeoView')?.addEventListener('click', () => {
       this.geoViewOpen = !this.geoViewOpen;
       document.getElementById('geoView')?.classList.toggle('hidden', !this.geoViewOpen);
@@ -438,11 +453,8 @@ export class App {
     });
   }
 
-  /** Assembles the Digital Twin + knowledge-graph evidence view from the same real data renderDataCatalog uses — no separate data source, no fabricated score. */
-  private renderTwin(): void {
-    const field = this.world.getField(this.worldIds.fieldId);
-    if (!field) return;
-
+  /** Shared by renderTwin and renderOperations — one Digital Twin construction, not two divergent copies. */
+  private computeTwinForField(field: Field) {
     const recentObservations = this.observationLog.recent(200);
     const coverage = computeFieldCoverage({
       fieldId: field.id,
@@ -463,6 +475,16 @@ export class App {
       dataGaps: detectDataGaps(coverage),
       recentEvents: this.world.listEventsForField(field.id)
     });
+
+    return { twin, recentObservations };
+  }
+
+  /** Assembles the Digital Twin + knowledge-graph evidence view from the same real data renderDataCatalog uses — no separate data source, no fabricated score. */
+  private renderTwin(): void {
+    const field = this.world.getField(this.worldIds.fieldId);
+    if (!field) return;
+
+    const { twin, recentObservations } = this.computeTwinForField(field);
 
     const graph = KnowledgeGraph.build(this.world, recentObservations, [
       {
@@ -493,6 +515,57 @@ export class App {
     ];
 
     this.twinPanel.render(twin, evidenceNodes, modelReadiness);
+  }
+
+  /** Maps the drone's real FlightState to fleet availability — never invents a status the flight state machine didn't actually report. */
+  private droneAvailabilityStatus(): FleetDrone['status'] {
+    const flightState = this.latestDroneState?.flightState;
+    if (!flightState) return 'OFFLINE';
+    if (flightState === 'EMERGENCY') return 'OFFLINE';
+    if (flightState === 'IDLE' || flightState === 'LANDED') return 'AVAILABLE';
+    return 'ON_MISSION';
+  }
+
+  /**
+   * Assembles the autonomous-operations view: the same Digital Twin this app
+   * already computes, run through AutonomyEngine to pick a mission
+   * objective, AgriculturalMission to plan real waypoints (or an explicit
+   * limitation), MissionValidation as the safety gate, and Fleet to attempt
+   * a capability-matched assignment against the one simulated drone this app
+   * actually runs. Nothing here claims real flight — see SimulatedFlightController.
+   */
+  private renderOperations(): void {
+    const field = this.world.getField(this.worldIds.fieldId);
+    if (!field) return;
+
+    const { twin } = this.computeTwinForField(field);
+    const availableSensorKinds = this.world.listSensors().map((s) => s.kind);
+
+    const decision = decideNextMission({ twin, geoReference: field.geoReference, availableSensorKinds });
+
+    const droneCapabilities = this.world
+      .listSensors()
+      .filter((s) => s.platform === 'drone')
+      .map((s) => s.kind);
+    const fleetDrone: FleetDrone = createFleetDrone({
+      name: 'Simulated Survey Drone',
+      capabilities: droneCapabilities,
+      provenance: 'SIMULATED',
+      status: this.droneAvailabilityStatus(),
+      batteryStateOfCharge: this.latestDroneState?.battery.stateOfCharge ?? null
+    });
+    const assignment = assignMission({ drones: [fleetDrone], plan: decision.plan });
+
+    this.operationsPanel.render({
+      decision,
+      fleetDrone,
+      assignment,
+      flightController: {
+        id: this.simulatedFlightController.id,
+        connectionState: this.simulatedFlightController.connectionState,
+        provenance: this.simulatedFlightController.provenance
+      }
+    });
   }
 
   private refreshSensorHealth(): void {
@@ -582,6 +655,7 @@ export class App {
     }
 
     const droneState = this.simulation.tick(dt);
+    this.latestDroneState = droneState;
     const telemetry = this.telemetryGenerator.generate(droneState, this.observationContext);
     const geodeticEstimate = this.deriveDroneGeodeticObservation(droneState);
     const observations: Observation<unknown>[] = [
