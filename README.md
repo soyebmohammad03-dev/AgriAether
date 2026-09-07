@@ -1100,6 +1100,65 @@ section is a fixture.
   See `PublicDatasetEvaluation.ts`'s Sentinel-2 entry (`verdict:
   'INTEGRATED'`) for the full accessibility/licensing/methodology record.
 
+## Real ML + evidence-based field sectioning ("Push 2")
+
+Builds on Push 1's real NDVI, not a rewrite of it. See `ml/README.md` for
+the full ML reproducibility record (dataset, metrics, licensing).
+
+- **`src/analysis/FieldSectioning.ts`**: the first real producer of
+  `Zone.classification = 'GIS_DERIVED'` — reserved for this since Phase 2.
+  Deterministic 1D k-means over real per-pixel NDVI (seeded from sorted-
+  value quantiles, never `Math.random`) → 4-connected flood fill into
+  spatial regions → a documented minimum-region-size filter → each
+  surviving region becomes a real `Zone` (geometry = union of its raster
+  cells as a `MultiPolygon`) plus a `ZoneGenerationRecord` (method,
+  parameters, source observation/dataset ids, real
+  `data/SpatialStatistics.ts` mean/stddev — nothing reimplemented). A zone
+  means "similar NDVI under this clustering," never a claim about soil,
+  disease, yield, or treatment need.
+- **`src/agriculture/CropProfile.ts`**: Corn and Soybeans only — the two
+  classes AgriAether's real trained model was evaluated on. Every
+  numeric-threshold field is `null` and `hasValidatedThresholds: false`;
+  no agronomic threshold is invented. `sensing/DiseasePestSignal.ts` now
+  optionally accepts a `cropProfile` and annotates its result with which
+  risk factors are crop-relevant — the underlying risk-factor logic is
+  completely unchanged, so every pre-Push-2 caller sees identical
+  behavior.
+- **Real ML** (`ml/`): a frozen `Prithvi-EO-2.0-tiny-TL` encoder
+  (Apache-2.0, 129MB, the smallest official Prithvi-EO-2.0 checkpoint) +
+  one real trained `nn.Linear` head, on 80 real training / 40 real
+  official-held-out-validation chips from
+  `ibm-nasa-geospatial/multi-temporal-crop-classification` (CC-BY-4.0).
+  Real validation accuracy is 35% — barely above the 32.5% majority-class
+  baseline — so `sensing/ModelRegistry.ts`'s new `TRAINED_MODELS` entry is
+  honestly `STAGED`, not `DEPLOYED`, even though it structurally satisfies
+  the DEPLOYED gate. `sensing/PredictionImport.ts` is the Python-artifact
+  → `PredictionRecord` adapter, tested against a committed real prediction
+  artifact (`ml/manifests/sample_predictions.json`) — no PyTorch runtime
+  in the browser, no inference microservice.
+- **Domain shift, enforced structurally, not just documented**:
+  `PredictionRecord.inputSource` (`'LIVE_FIELD' | 'MODEL_VALIDATION_DATA' |
+  'UNKNOWN'`) exists specifically so a benchmark-chip prediction can never
+  be silently presented as live-field data. Every prediction in this
+  codebase today is `'MODEL_VALIDATION_DATA'` — the live Sentinel-2
+  pipeline only fetches RED+NIR at one date, not the 6-band/3-timestep
+  input this model needs, so no field (including the real Iowa test
+  field) has ever actually been fed to it. `sensing/RecommendationEngine.ts`'s
+  new `recommendFromSectionEvidence` reflects this: even a confident
+  prediction only ever proposes "verify with a ground observation," never
+  a confirmed identity.
+- **UI**: the Satellite panel (`ui/SatellitePanel.ts`) gained a "Generate
+  evidence-based management zones" button (only enabled after a real
+  Sentinel-2 fetch), a real per-zone stats list, and a Model section
+  showing the real STAGED model's real metrics with an explicit
+  UNVERIFIED-for-this-field notice. `ui/SatelliteFieldView.ts` now draws
+  real zone polygon outlines over the real NDVI heatmap.
+- **Not done in this milestone**: no live-field ML prediction (blocked on
+  extending the raster pipeline to 6 bands / 3 timesteps — see
+  `ml/README.md`'s domain-shift section), no drone imagery, no
+  fine-tuning of the encoder itself (frozen throughout), no crops beyond
+  Corn/Soybeans.
+
 ## Local development
 
 ```bash

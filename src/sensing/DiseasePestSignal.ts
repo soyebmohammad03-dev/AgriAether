@@ -1,5 +1,6 @@
 import { createId } from '../domain/id';
 import type { MoistureStatus } from '../soil/SoilQuality';
+import type { CropProfile } from '../agriculture/CropProfile';
 
 /**
  * `ELEVATED_RISK` means one or more known agronomic risk *factors* were
@@ -28,6 +29,8 @@ export interface DiseasePestAssessment {
   missingEvidence: string[];
   computedAt: number;
   method: string;
+  /** Present only when a CropProfile was supplied — which of ITS listed risk factors actually fired here. Never changes status/riskFactors above; a crop-unaware caller sees identical results to before this field existed. */
+  cropContext: { cropName: string; hasValidatedThresholds: boolean; relevantRiskFactorsTriggered: string[] } | null;
 }
 
 export interface DiseasePestEvidence {
@@ -42,6 +45,8 @@ export interface DiseasePestEvidence {
   tMaxAvgC?: number | null;
   weatherObservationId?: string | null;
   hasCropObservation?: boolean;
+  /** Optional — see agriculture/CropProfile.ts. Never gates or changes the generic risk-factor logic below; only annotates the result. */
+  cropProfile?: CropProfile | null;
 }
 
 /** Widely-cited rough range where many foliar fungal pathogens are favored by sustained moisture — not crop- or pathogen-specific. */
@@ -121,6 +126,14 @@ export function assessDiseasePestRisk(evidence: DiseasePestEvidence): DiseasePes
   const status: DiseasePestRiskStatus =
     evidenceCategoriesSupplied === 0 ? 'INSUFFICIENT_DATA' : riskFactors.length > 0 ? 'ELEVATED_RISK' : 'NORMAL';
 
+  const cropContext = evidence.cropProfile
+    ? {
+        cropName: evidence.cropProfile.cropName,
+        hasValidatedThresholds: evidence.cropProfile.hasValidatedThresholds,
+        relevantRiskFactorsTriggered: riskFactors.map((f) => f.type).filter((type) => evidence.cropProfile!.relevantDiseaseRiskFactors.includes(type))
+      }
+    : null;
+
   return {
     id: createId('disease_pest'),
     fieldId: evidence.fieldId,
@@ -129,6 +142,7 @@ export function assessDiseasePestRisk(evidence: DiseasePestEvidence): DiseasePes
     riskFactors,
     missingEvidence,
     computedAt: Date.now(),
-    method: 'rule_based_risk_factor_screening_v1'
+    method: 'rule_based_risk_factor_screening_v1',
+    cropContext
   };
 }

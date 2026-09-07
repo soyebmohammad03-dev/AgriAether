@@ -1,0 +1,946 @@
+{
+  "trainMetrics": {
+    "sampleCount": 80,
+    "accuracy": 0.975,
+    "balancedAccuracy": 0.993939393939394,
+    "macroF1": 0.9895456312247917,
+    "perClass": [
+      {
+        "classIndex": 0,
+        "support": 30,
+        "precision": 1.0,
+        "recall": 0.9333333333333333,
+        "f1": 0.9655172413793104
+      },
+      {
+        "classIndex": 1,
+        "support": 13,
+        "precision": 0.9285714285714286,
+        "recall": 1.0,
+        "f1": 0.962962962962963
+      },
+      {
+        "classIndex": 2,
+        "support": 11,
+        "precision": 0.9166666666666666,
+        "recall": 1.0,
+        "f1": 0.9565217391304348
+      },
+      {
+        "classIndex": 3,
+        "support": 12,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "classIndex": 4,
+        "support": 5,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "classIndex": 5,
+        "support": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "classIndex": 6,
+        "support": 0,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      },
+      {
+        "classIndex": 7,
+        "support": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "classIndex": 8,
+        "support": 0,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      },
+      {
+        "classIndex": 9,
+        "support": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "classIndex": 10,
+        "support": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "classIndex": 11,
+        "support": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "classIndex": 12,
+        "support": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      }
+    ],
+    "confusionMatrix": [
+      [
+        28,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        13,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        11,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        12,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        5,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    ],
+    "classesAbsentFromEvaluation": [
+      6,
+      8
+    ]
+  },
+  "validationMetrics_allPredictions": {
+    "sampleCount": 40,
+    "accuracy": 0.35,
+    "balancedAccuracy": 0.2367216117216117,
+    "macroF1": 0.3466666666666667,
+    "perClass": [
+      {
+        "classIndex": 0,
+        "support": 13,
+        "precision": 0.47058823529411764,
+        "recall": 0.6153846153846154,
+        "f1": 0.5333333333333333
+      },
+      {
+        "classIndex": 1,
+        "support": 8,
+        "precision": 0.5,
+        "recall": 0.125,
+        "f1": 0.2
+      },
+      {
+        "classIndex": 2,
+        "support": 8,
+        "precision": 0.2857142857142857,
+        "recall": 0.25,
+        "f1": 0.26666666666666666
+      },
+      {
+        "classIndex": 3,
+        "support": 6,
+        "precision": 0.3333333333333333,
+        "recall": 0.3333333333333333,
+        "f1": 0.3333333333333333
+      },
+      {
+        "classIndex": 4,
+        "support": 3,
+        "precision": 0.5,
+        "recall": 0.3333333333333333,
+        "f1": 0.4
+      },
+      {
+        "classIndex": 5,
+        "support": 0,
+        "precision": 0.0,
+        "recall": null,
+        "f1": null
+      },
+      {
+        "classIndex": 6,
+        "support": 0,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      },
+      {
+        "classIndex": 7,
+        "support": 1,
+        "precision": null,
+        "recall": 0.0,
+        "f1": null
+      },
+      {
+        "classIndex": 8,
+        "support": 0,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      },
+      {
+        "classIndex": 9,
+        "support": 1,
+        "precision": null,
+        "recall": 0.0,
+        "f1": null
+      },
+      {
+        "classIndex": 10,
+        "support": 0,
+        "precision": 0.0,
+        "recall": null,
+        "f1": null
+      },
+      {
+        "classIndex": 11,
+        "support": 0,
+        "precision": 0.0,
+        "recall": null,
+        "f1": null
+      },
+      {
+        "classIndex": 12,
+        "support": 0,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      }
+    ],
+    "confusionMatrix": [
+      [
+        8,
+        0,
+        3,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        3,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0
+      ],
+      [
+        4,
+        0,
+        2,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        1,
+        0,
+        2,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "classesAbsentFromEvaluation": [
+      5,
+      6,
+      8,
+      10,
+      11,
+      12
+    ]
+  },
+  "validationMetrics_confidenceCoveredOnly": {
+    "sampleCount": 23,
+    "accuracy": 0.30434782608695654,
+    "balancedAccuracy": 0.2324074074074074,
+    "macroF1": 0.40476190476190477,
+    "perClass": [
+      {
+        "classIndex": 0,
+        "support": 9,
+        "precision": 0.4444444444444444,
+        "recall": 0.4444444444444444,
+        "f1": 0.4444444444444444
+      },
+      {
+        "classIndex": 1,
+        "support": 5,
+        "precision": 0.5,
+        "recall": 0.2,
+        "f1": 0.28571428571428575
+      },
+      {
+        "classIndex": 2,
+        "support": 4,
+        "precision": 0.2,
+        "recall": 0.25,
+        "f1": 0.22222222222222224
+      },
+      {
+        "classIndex": 3,
+        "support": 2,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": null
+      },
+      {
+        "classIndex": 4,
+        "support": 2,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6666666666666666
+      },
+      {
+        "classIndex": 5,
+        "support": 0,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      },
+      {
+        "classIndex": 6,
+        "support": 0,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      },
+      {
+        "classIndex": 7,
+        "support": 1,
+        "precision": null,
+        "recall": 0.0,
+        "f1": null
+      },
+      {
+        "classIndex": 8,
+        "support": 0,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      },
+      {
+        "classIndex": 9,
+        "support": 0,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      },
+      {
+        "classIndex": 10,
+        "support": 0,
+        "precision": 0.0,
+        "recall": null,
+        "f1": null
+      },
+      {
+        "classIndex": 11,
+        "support": 0,
+        "precision": 0.0,
+        "recall": null,
+        "f1": null
+      },
+      {
+        "classIndex": 12,
+        "support": 0,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      }
+    ],
+    "confusionMatrix": [
+      [
+        4,
+        0,
+        3,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        2,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0
+      ],
+      [
+        2,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "classesAbsentFromEvaluation": [
+      5,
+      6,
+      8,
+      9,
+      10,
+      11,
+      12
+    ]
+  },
+  "abstention": {
+    "threshold": 0.5,
+    "abstainedCount": 17,
+    "totalValidationCount": 40,
+    "coverageFraction": 0.575
+  },
+  "classIndexToName": {
+    "0": "Natural Vegetation",
+    "1": "Forest",
+    "2": "Corn",
+    "3": "Soybeans",
+    "4": "Wetlands",
+    "5": "Developed/Barren",
+    "6": "Open Water",
+    "7": "Winter Wheat",
+    "8": "Alfalfa",
+    "9": "Fallow/Idle Cropland",
+    "10": "Cotton",
+    "11": "Sorghum",
+    "12": "Other"
+  },
+  "majorityClassBaseline": {
+    "majorityClassIndex": 0,
+    "majorityClassName": "Natural Vegetation",
+    "validationAccuracyPredictingMajorityClassAlways": 0.325
+  },
+  "chipPurity": {
+    "trainMeanDominantClassFraction": 0.27603635204081634,
+    "validationMeanDominantClassFraction": 0.26465740593112247
+  },
+  "warnings": [
+    "This evaluates CHIP-LEVEL dominant-class classification (one label per 224x224 chip), not per-pixel segmentation.",
+    "Sample size is small (tens of chips per split, real numbers in trainMetrics/validationMetrics above) \u2014 a real, valid, but small experiment, not a production-scale evaluation.",
+    "Several of the dataset's 13 documented classes may be absent from this small sample \u2014 see classesAbsentFromEvaluation in each report."
+  ]
+}

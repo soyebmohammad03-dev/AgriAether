@@ -17,7 +17,7 @@ function minimalTwin(overrides: Partial<FieldTwinSnapshot> = {}): FieldTwinSnaps
     evidence: { items: [], conflicts: [], missingTypes: [] } as unknown as FieldTwinSnapshot['evidence'],
     coverage: {} as FieldTwinSnapshot['coverage'],
     dataGaps: [],
-    diseasePestRisk: { id: 'd1', fieldId: 'f', zoneId: null, status: 'INSUFFICIENT_DATA', riskFactors: [], missingEvidence: [], computedAt: 1, method: 'x' },
+    diseasePestRisk: { id: 'd1', fieldId: 'f', zoneId: null, status: 'INSUFFICIENT_DATA', riskFactors: [], missingEvidence: [], computedAt: 1, method: 'x', cropContext: null },
     cropStress: { id: 'c1', fieldId: 'f', zoneId: null, status: 'INSUFFICIENT_DATA', signals: [], missingEvidence: [], computedAt: 1, method: 'x' },
     irrigation: { fieldId: 'f', zoneId: null, moistureStatus: null, moistureSampleId: null, moistureTrend: null, recentRainfallMm: null, recentIrrigationEvents: [], needStatus: 'INSUFFICIENT_DATA', reasons: [], missingEvidence: [], computedAt: 1, method: 'x' },
     nutrient: { fieldId: 'f', zoneId: null, nitrogen: null, phosphorus: null, potassium: null, missing: ['nitrogen', 'phosphorus', 'potassium'], trend: { 'soil.nitrogen': null, 'soil.phosphorus': null, 'soil.potassium': null }, computedAt: 1 },

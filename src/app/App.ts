@@ -73,7 +73,9 @@ import { explainRecommendation, explainFieldOptimization } from '../explainabili
 import { buildDecisionTrace } from '../explainability/DecisionTrace';
 import { runIrrigationWhatIf } from '../research/Experiment';
 import { buildResearchCatalog } from '../research/ResearchCatalog';
-import { PLANNED_MODELS } from '../sensing/ModelRegistry';
+import { PLANNED_MODELS, TRAINED_MODELS } from '../sensing/ModelRegistry';
+import { generateFieldSections } from '../analysis/FieldSectioning';
+import { recommendFromSectionEvidence } from '../sensing/RecommendationEngine';
 
 /** Days of historical weather fetched once at startup — enough for a real Growing Degree Days window without an oversized request. */
 const WEATHER_HISTORY_DAYS = 14;
@@ -368,6 +370,7 @@ export class App {
     });
 
     this.satellitePanel.onFetchRequested = () => void this.fetchRealSentinelData();
+    this.satellitePanel.onGenerateZonesRequested = () => void this.generateManagementZones();
     document.getElementById('btnSatellite')?.addEventListener('click', () => {
       const open = this.satellitePanel.toggle();
       setButtonActive('btnSatellite', open);
@@ -733,7 +736,8 @@ export class App {
 
   /** Renders the satellite panel from whatever satelliteState currently is — never triggers a fetch itself (see fetchRealSentinelData). */
   private renderSatellite(): void {
-    this.satellitePanel.render(this.satelliteState);
+    const trainedModel = TRAINED_MODELS.find((m) => m.task === 'CROP_TYPE_CLASSIFICATION') ?? null;
+    this.satellitePanel.render(this.satelliteState, trainedModel);
     const canvas = document.getElementById('satelliteFieldCanvas') as HTMLCanvasElement | null;
     if (!canvas) return;
     this.satelliteFieldView = new SatelliteFieldView(canvas);
@@ -743,7 +747,13 @@ export class App {
     if (!fieldBoundary) return;
 
     if (this.satelliteState.status === 'READY') {
-      this.satelliteFieldView.draw({ status: 'READY', fieldBoundary, grid: this.satelliteState.analysis.grid, ndviCells: this.satelliteState.analysis.ndviCells });
+      this.satelliteFieldView.draw({
+        status: 'READY',
+        fieldBoundary,
+        grid: this.satelliteState.analysis.grid,
+        ndviCells: this.satelliteState.analysis.ndviCells,
+        zones: this.satelliteState.sectioning?.zones
+      });
     } else if (this.satelliteState.status === 'IDLE') {
       this.satelliteFieldView.draw({ status: 'IDLE', message: 'Real field boundary shown — press Fetch for real NDVI.', fieldBoundary });
     } else {
@@ -811,7 +821,7 @@ export class App {
         void this.repositories.observations.save(obs);
       }
 
-      this.satelliteState = { status: 'READY', analysis, dataset };
+      this.satelliteState = { status: 'READY', analysis, dataset, sectioning: null, sectionRecommendations: [], knowledgeGraphEvidenceCount: null };
     } catch (error) {
       const message = error instanceof SatelliteProviderError ? `${error.message} (${error.kind})` : (error as Error).message;
       this.satelliteState = { status: 'ERROR', message };
@@ -819,6 +829,61 @@ export class App {
       this.satelliteFetchInFlight = false;
       this.renderSatellite();
     }
+  }
+
+  /**
+   * Generates real evidence-based (GIS_DERIVED) management zones from the
+   * real per-pixel NDVI the last successful Sentinel-2 fetch produced (see
+   * analysis/FieldSectioning.ts) and registers each as a real Zone via
+   * WorldRegistry — the first real producer of Zone.classification =
+   * 'GIS_DERIVED'. Also attaches a conservative recommendation per zone
+   * (never a confident diagnosis/treatment) and, when the trained
+   * crop-classification model exists, an explicitly UNVERIFIED-for-this-
+   * field prediction reference — no live prediction is fabricated here
+   * because the live pipeline does not yet fetch the 6-band/3-timestep
+   * input that model requires (see ml/README.md).
+   */
+  private async generateManagementZones(): Promise<void> {
+    if (this.satelliteState.status !== 'READY') return;
+    const { analysis } = this.satelliteState;
+
+    const sectioning = generateFieldSections({
+      fieldId: this.realField.id,
+      grid: analysis.grid,
+      ndviCells: analysis.ndviCells,
+      sourceObservationIds: analysis.ndviObservation ? [analysis.ndviObservation.id] : [],
+      sourceDatasetIds: [this.satelliteState.dataset.id]
+    });
+
+    for (const zone of sectioning.zones) {
+      await this.world.registerZone(zone);
+    }
+
+    const sectionRecommendations = sectioning.generationRecords.flatMap((record) =>
+      recommendFromSectionEvidence({ fieldId: this.realField.id, zoneId: record.zoneId, zoneGeneration: record, prediction: null })
+    );
+
+    // Real Knowledge Graph traversal for the real field: each zone's generation record becomes an Analysis
+    // node (reusing the same mechanism Push 1's disease-risk/recommendation Analysis nodes already use — no
+    // new relationship types), and Zone nodes appear automatically via KnowledgeGraph.build's existing
+    // Field->Zone iteration, so a real GIS_DERIVED zone is graph-traversable with zero KnowledgeGraph.ts changes.
+    const realFieldObservations = this.observationLog.recent(200).filter((o) => o.fieldId === this.realField.id);
+    const graph = KnowledgeGraph.build(
+      this.world,
+      realFieldObservations,
+      sectioning.generationRecords.map((record) => ({
+        id: record.zoneId,
+        type: 'gis_derived_zone',
+        fieldId: this.realField.id,
+        zoneId: record.zoneId,
+        computedAt: record.generatedAt,
+        supportingObservationIds: record.sourceObservationIds
+      }))
+    );
+    const evidenceCount = graph.evidenceFor(`Field:${this.realField.id}`).length;
+
+    this.satelliteState = { ...this.satelliteState, sectioning, sectionRecommendations, knowledgeGraphEvidenceCount: evidenceCount };
+    this.renderSatellite();
   }
 
   private refreshSensorHealth(): void {

@@ -1,0 +1,116 @@
+{
+  "modelName": "agriaether-crop-classification-head-v1",
+  "task": "CHIP_LEVEL_CROP_CLASSIFICATION",
+  "baseEncoder": {
+    "name": "Prithvi-EO-2.0-tiny-TL",
+    "source": "https://huggingface.co/ibm-nasa-geospatial/Prithvi-EO-2.0-tiny-TL",
+    "checkpointFile": "Prithvi_EO_V2_tiny_TL.pt",
+    "checkpointSha256": "d47326db9bad502b611f73e3e3f3a0e68b7b82640d67c22c795417f7209f8d70",
+    "license": "Apache-2.0",
+    "frozen": true,
+    "embedDim": 192,
+    "depth": 12
+  },
+  "head": {
+    "type": "linear",
+    "inputDim": 192,
+    "outputClasses": 13,
+    "trainable": true,
+    "checkpointFile": "head.pt",
+    "checkpointSha256": "da94498d27a43e49e0ab4f879ae7c3210cae94c6a1eb90307cde1089a774a4e4"
+  },
+  "dataset": {
+    "name": "ibm-nasa-geospatial/multi-temporal-crop-classification",
+    "license": "CC-BY-4.0",
+    "manifest": "dataset_manifest.json",
+    "trainSamples": 80,
+    "validationSamples": 40,
+    "splitStrategy": "dataset's own official chip-level train/validation split (training_data.txt / validation_data.txt) \u2014 no chip appears in both."
+  },
+  "classes": [
+    {
+      "classIndex": 0,
+      "cdlClassId": 1,
+      "name": "Natural Vegetation"
+    },
+    {
+      "classIndex": 1,
+      "cdlClassId": 2,
+      "name": "Forest"
+    },
+    {
+      "classIndex": 2,
+      "cdlClassId": 3,
+      "name": "Corn"
+    },
+    {
+      "classIndex": 3,
+      "cdlClassId": 4,
+      "name": "Soybeans"
+    },
+    {
+      "classIndex": 4,
+      "cdlClassId": 5,
+      "name": "Wetlands"
+    },
+    {
+      "classIndex": 5,
+      "cdlClassId": 6,
+      "name": "Developed/Barren"
+    },
+    {
+      "classIndex": 6,
+      "cdlClassId": 7,
+      "name": "Open Water"
+    },
+    {
+      "classIndex": 7,
+      "cdlClassId": 8,
+      "name": "Winter Wheat"
+    },
+    {
+      "classIndex": 8,
+      "cdlClassId": 9,
+      "name": "Alfalfa"
+    },
+    {
+      "classIndex": 9,
+      "cdlClassId": 10,
+      "name": "Fallow/Idle Cropland"
+    },
+    {
+      "classIndex": 10,
+      "cdlClassId": 11,
+      "name": "Cotton"
+    },
+    {
+      "classIndex": 11,
+      "cdlClassId": 12,
+      "name": "Sorghum"
+    },
+    {
+      "classIndex": 12,
+      "cdlClassId": 13,
+      "name": "Other"
+    }
+  ],
+  "training": {
+    "seed": 42,
+    "epochs": 300,
+    "learningRate": 0.01,
+    "optimizer": "Adam",
+    "lossFunction": "CrossEntropyLoss (inverse-frequency class-weighted)",
+    "featureAggregation": "mean-pool over all frozen encoder patch tokens (cls token excluded)",
+    "abstentionConfidenceThreshold": 0.5
+  },
+  "runtime": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "pythonVersion": "3.12.14",
+    "torchVersion": "2.14.0",
+    "device": "cpu",
+    "featureExtractionSeconds": 3.53,
+    "trainingSeconds": 0.14
+  },
+  "trainedAt": 1788810558299,
+  "evaluatedAt": 1788810558299
+}

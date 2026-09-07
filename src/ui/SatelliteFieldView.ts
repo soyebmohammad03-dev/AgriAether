@@ -1,6 +1,9 @@
-import type { Polygon } from 'geojson';
+import type { MultiPolygon, Polygon } from 'geojson';
 import { boundingBox } from '../geo/geometry';
 import type { RasterGrid } from '../data/Raster';
+import type { Zone } from '../domain/Zone';
+
+const ZONE_COLORS = ['rgba(251,191,36,0.95)', 'rgba(96,165,250,0.95)', 'rgba(244,114,182,0.95)', 'rgba(167,139,250,0.95)', 'rgba(52,211,153,0.95)'];
 
 export type SatelliteViewStatus = 'IDLE' | 'LOADING' | 'ERROR' | 'READY';
 
@@ -52,12 +55,31 @@ export class SatelliteFieldView {
     ctx.fillText(text, this.canvas.width / 2, this.canvas.height / 2);
   }
 
+  private drawMultiPolygonOutline(bbox: [number, number, number, number], geometry: MultiPolygon, color: string): void {
+    const ctx = this.ctx;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    for (const polygon of geometry.coordinates) {
+      for (const ring of polygon) {
+        ctx.beginPath();
+        ring.forEach(([lon, lat], i) => {
+          const [x, y] = this.toCanvas(bbox, lon, lat);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.stroke();
+      }
+    }
+  }
+
   draw(params: {
     status: SatelliteViewStatus;
     message?: string;
     fieldBoundary?: Polygon;
     grid?: RasterGrid;
     ndviCells?: Array<{ row: number; col: number; value: number }>;
+    zones?: Zone[];
   }): void {
     const ctx = this.ctx;
 
@@ -94,5 +116,12 @@ export class SatelliteFieldView {
     ctx.strokeStyle = 'rgba(74,222,128,0.85)';
     ctx.lineWidth = 2;
     ctx.stroke();
+
+    if (params.zones) {
+      params.zones.forEach((zone, i) => {
+        if (zone.geoReference.kind !== 'geodetic' || zone.geoReference.geometry.type !== 'MultiPolygon') return;
+        this.drawMultiPolygonOutline(bbox, zone.geoReference.geometry, ZONE_COLORS[i % ZONE_COLORS.length]);
+      });
+    }
   }
 }

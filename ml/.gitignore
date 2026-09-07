@@ -1,0 +1,11 @@
+# Real downloaded dataset chips, model checkpoints, and generated artifacts —
+# never committed. Only manifests/ (small JSON) is tracked, so the exact
+# experiment is reproducible via download_chips.py + train.py without
+# vendoring the data or weights themselves.
+data/
+checkpoints/
+artifacts/
+*.pt
+*.pth
+__pycache__/
+*.pyc

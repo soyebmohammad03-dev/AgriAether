@@ -41,4 +41,18 @@ describe('assessDiseasePestRisk', () => {
     expect(result.riskFactors[0].description).not.toMatch(/fungus name|pathogen species|diagnos(is|ed)/i);
     expect(result.riskFactors[0].confidence).toBeNull();
   });
+
+  it('cropContext is null when no CropProfile is supplied — identical to pre-crop-aware behavior', () => {
+    const result = assessDiseasePestRisk({ fieldId: 'f', soilMoistureStatus: 'SATURATED', soilSampleId: 's' });
+    expect(result.cropContext).toBeNull();
+  });
+
+  it('annotates cropContext without changing status/riskFactors when a CropProfile is supplied', async () => {
+    const { CROP_PROFILES } = await import('../agriculture/CropProfile');
+    const withoutProfile = assessDiseasePestRisk({ fieldId: 'f', soilMoistureStatus: 'SATURATED', soilSampleId: 's' });
+    const withProfile = assessDiseasePestRisk({ fieldId: 'f', soilMoistureStatus: 'SATURATED', soilSampleId: 's', cropProfile: CROP_PROFILES.corn });
+    expect(withProfile.status).toBe(withoutProfile.status);
+    expect(withProfile.riskFactors).toEqual(withoutProfile.riskFactors);
+    expect(withProfile.cropContext).toEqual({ cropName: 'Corn (Zea mays)', hasValidatedThresholds: false, relevantRiskFactorsTriggered: ['saturated_soil_root_rot_risk'] });
+  });
 });

@@ -3,6 +3,8 @@ import type { IrrigationAssessment } from '../irrigation/IrrigationIntelligence'
 import type { NutrientEvidenceSummary } from '../soil/NutrientIntelligence';
 import type { CropStressAssessment } from './CropStressSignal';
 import type { DiseasePestAssessment } from './DiseasePestSignal';
+import type { ZoneGenerationRecord } from '../analysis/FieldSectioning';
+import type { PredictionRecord } from './ModelRegistry';
 
 export type RecommendationCategory = 'IRRIGATION' | 'NUTRIENT' | 'FIELD_OPERATION';
 export type RecommendationUrgency = 'LOW' | 'MEDIUM' | 'HIGH';
@@ -148,6 +150,77 @@ export function generateRecommendations(params: {
         urgency: 'LOW',
       })
     );
+  }
+
+  return recommendations;
+}
+
+/**
+ * Recommendations from GIS-derived section evidence (see
+ * analysis/FieldSectioning.ts) and, where one exists, a real ML prediction
+ * for that section (see sensing/PredictionImport.ts). Conservative by the
+ * same rule as generateRecommendations above: an abstained or
+ * unverified-for-this-field prediction never becomes a confident action,
+ * only ever a "go verify" suggestion — this function never asserts a crop
+ * identity as settled fact, regardless of model confidence, because
+ * PredictionRecord.inputSource may be MODEL_VALIDATION_DATA (a benchmark
+ * chip, not this field) rather than a live-field observation.
+ */
+export function recommendFromSectionEvidence(params: { fieldId: string; zoneId: string; zoneGeneration: ZoneGenerationRecord; prediction?: PredictionRecord | null }): Recommendation[] {
+  const recommendations: Recommendation[] = [];
+  const now = Date.now();
+
+  if (params.prediction?.abstained) {
+    recommendations.push({
+      id: createId('recommendation'),
+      category: 'FIELD_OPERATION',
+      fieldId: params.fieldId,
+      zoneId: params.zoneId,
+      status: 'NEEDS_MORE_DATA',
+      proposedAction: 'Collect a ground crop observation for this section — the crop-classification model abstained (confidence below its threshold), so no model output is usable here.',
+      rationale: params.prediction.abstentionReason ?? 'Model confidence below threshold.',
+      evidenceObservationIds: [],
+      missingEvidence: ['ground_truth_crop_observation'],
+      confidence: null,
+      urgency: 'LOW',
+      timestamp: now,
+      provenance: 'rule_based_evidence_aggregation_v1'
+    });
+  } else if (params.prediction?.status === 'PREDICTED') {
+    const unverifiedForField = params.prediction.inputSource !== 'LIVE_FIELD';
+    recommendations.push({
+      id: createId('recommendation'),
+      category: 'FIELD_OPERATION',
+      fieldId: params.fieldId,
+      zoneId: params.zoneId,
+      status: 'ACTIONABLE',
+      proposedAction: `Model suggests "${params.prediction.predictedClassName ?? params.prediction.predictedClassId}" for this section (model confidence ${(params.prediction.confidence ?? 0).toFixed(2)}) — verify with a ground observation before treating this as confirmed. Model confidence is not the same as agricultural certainty.`,
+      rationale: unverifiedForField ? 'Model applicability to this field is unverified — this prediction is not confirmed against live field data.' : 'Model prediction on live field data.',
+      evidenceObservationIds: params.prediction.inputObservationIds,
+      missingEvidence: unverifiedForField ? ['live_field_ground_truth'] : [],
+      confidence: params.prediction.confidence,
+      urgency: 'LOW',
+      timestamp: now,
+      provenance: 'rule_based_evidence_aggregation_v1'
+    });
+  }
+
+  if (params.zoneGeneration.coverageFraction < 0.5) {
+    recommendations.push({
+      id: createId('recommendation'),
+      category: 'FIELD_OPERATION',
+      fieldId: params.fieldId,
+      zoneId: params.zoneId,
+      status: 'NEEDS_MORE_DATA',
+      proposedAction: 'Schedule an additional satellite pass or drone survey for this section — its GIS-derived boundary covers less than half of the field\'s valid-evidence cells.',
+      rationale: `Coverage fraction ${params.zoneGeneration.coverageFraction.toFixed(2)} is below 0.5.`,
+      evidenceObservationIds: params.zoneGeneration.sourceObservationIds,
+      missingEvidence: [],
+      confidence: null,
+      urgency: 'LOW',
+      timestamp: now,
+      provenance: 'rule_based_evidence_aggregation_v1'
+    });
   }
 
   return recommendations;

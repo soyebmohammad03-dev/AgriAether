@@ -87,6 +87,19 @@ describe('createPredictionRecord', () => {
   });
 });
 
+describe('TRAINED_MODELS', () => {
+  it('the real crop-classification model carries real metrics, real dataset ref, and is honestly STAGED, not DEPLOYED', async () => {
+    const { TRAINED_MODELS } = await import('./ModelRegistry');
+    const model = TRAINED_MODELS.find((m) => m.task === 'CROP_TYPE_CLASSIFICATION');
+    expect(model).toBeDefined();
+    expect(model!.deploymentStatus).toBe('STAGED');
+    expect(model!.evaluationMetrics).not.toBeNull();
+    expect(model!.evaluationMetrics!.validationAccuracy).toBeGreaterThan(0);
+    expect(model!.trainingDatasetRef).toContain('multi-temporal-crop-classification');
+    expect(model!.featureSchema.length).toBeGreaterThan(0);
+  });
+});
+
 describe('assessDatasetReadiness', () => {
   it('reports INSUFFICIENT_DATA with a specific reason when labeled samples are below the floor', () => {
     const check = assessDatasetReadiness('CROP_STRESS_CLASSIFICATION', 0);

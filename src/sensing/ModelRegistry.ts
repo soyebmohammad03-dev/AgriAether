@@ -6,7 +6,8 @@ export type ModelTask =
   | 'DISEASE_CLASSIFICATION'
   | 'YIELD_ESTIMATION'
   | 'IRRIGATION_DEMAND'
-  | 'NUTRIENT_STATUS';
+  | 'NUTRIENT_STATUS'
+  | 'CROP_TYPE_CLASSIFICATION';
 export type ModelDeploymentStatus = 'NOT_DEPLOYED' | 'STAGED' | 'DEPLOYED';
 
 /**
@@ -101,6 +102,18 @@ export function createModelRecord(params: {
  * prediction was actually produced, so "why didn't this field get a yield
  * number" is always answerable from data already on hand.
  */
+/**
+ * Where the input to this prediction actually came from — the structural
+ * enforcement of the Push 2 domain-shift rule: a prediction run against a
+ * benchmark/validation chip must never be silently presented as applicable
+ * to a live AgriAether field. `LIVE_FIELD` is only ever used once a real
+ * pipeline (e.g. satellite/SentinelFieldPipeline.ts output, reformatted to
+ * a model's actual input contract) has genuinely fed the model — this
+ * repository has none yet (see ml/README.md), so no PredictionRecord in
+ * this codebase should claim it today.
+ */
+export type PredictionInputSource = 'LIVE_FIELD' | 'MODEL_VALIDATION_DATA' | 'UNKNOWN';
+
 export interface PredictionRecord {
   id: string;
   modelId: string;
@@ -114,6 +127,16 @@ export interface PredictionRecord {
   reason: string | null;
   inputObservationIds: string[];
   requestedAt: number;
+  /** Classification-specific fields — null/empty for a numeric-value prediction (e.g. yield estimation) or any NOT_AVAILABLE result. */
+  predictedClassId: string | null;
+  predictedClassName: string | null;
+  probabilityDistribution: Record<string, number> | null;
+  /** True when confidence fell below the model's abstention threshold and no class was forced — see ModelRecord.confidenceCalibration for the threshold, when documented. */
+  abstained: boolean;
+  abstentionReason: string | null;
+  datasetVersion: string | null;
+  /** See PredictionInputSource — defaults 'UNKNOWN' so a caller must deliberately assert LIVE_FIELD rather than getting it for free. */
+  inputSource: PredictionInputSource;
 }
 
 export function createPredictionRecord(params: {
@@ -125,6 +148,13 @@ export function createPredictionRecord(params: {
   confidence?: number | null;
   reason?: string | null;
   inputObservationIds?: string[];
+  predictedClassId?: string | null;
+  predictedClassName?: string | null;
+  probabilityDistribution?: Record<string, number> | null;
+  abstained?: boolean;
+  abstentionReason?: string | null;
+  datasetVersion?: string | null;
+  inputSource?: PredictionInputSource;
 }): PredictionRecord {
   return {
     id: createId('prediction'),
@@ -138,7 +168,14 @@ export function createPredictionRecord(params: {
     confidence: params.confidence ?? null,
     reason: params.reason ?? null,
     inputObservationIds: params.inputObservationIds ?? [],
-    requestedAt: Date.now()
+    requestedAt: Date.now(),
+    predictedClassId: params.predictedClassId ?? null,
+    predictedClassName: params.predictedClassName ?? null,
+    probabilityDistribution: params.probabilityDistribution ?? null,
+    abstained: params.abstained ?? false,
+    abstentionReason: params.abstentionReason ?? null,
+    datasetVersion: params.datasetVersion ?? null,
+    inputSource: params.inputSource ?? 'UNKNOWN'
   };
 }
 
@@ -237,5 +274,52 @@ export const PLANNED_MODELS: ModelRecord[] = [
     outputType: 'Predicted nutrient sufficiency class',
     featureSchema: ['soil.nitrogen', 'soil.phosphorus', 'soil.potassium', 'domain.crop_cycle'],
     limitations: 'No regionally-calibrated sufficiency curve exists in this repository. NutrientIntelligence.ts reports measured completeness/status only, never a fertilizer rate.'
+  })
+];
+
+/**
+ * Models that are genuinely trained and evaluated — distinct from
+ * PLANNED_MODELS (which are, by definition, never deployed). This array
+ * has exactly one entry as of Push 2: a real, frozen Prithvi-EO-2.0-tiny-TL
+ * encoder (Apache-2.0, ibm-nasa-geospatial) plus a real trained linear head
+ * (80 real training chips / 40 real held-out validation chips from
+ * ibm-nasa-geospatial/multi-temporal-crop-classification, CC-BY-4.0, using
+ * the dataset's own official split). See ml/manifests/ for the full
+ * reproducibility record (checksums, config, metrics) this entry's fields
+ * are copied from — never invented here.
+ *
+ * `deploymentStatus: 'STAGED'`, not `'DEPLOYED'`: the structural DEPLOYED
+ * gate (assertModelRecordValid) would actually be satisfied by this
+ * model's real artifact/metrics/timestamps, but its real validation
+ * accuracy (35%) is only marginally above the real majority-class baseline
+ * (32.5%) on a 40-sample validation set — see
+ * ml/manifests/evaluation_report.json. STAGED honestly reflects "real,
+ * evaluated, not yet trustworthy for a production recommendation."
+ */
+export const TRAINED_MODELS: ModelRecord[] = [
+  createModelRecord({
+    name: 'AgriAether Crop Type Classification (Prithvi-EO-2.0-tiny-TL, chip-level)',
+    version: 'da94498d27a4',
+    task: 'CROP_TYPE_CLASSIFICATION',
+    inputRequirements: 'HLS 6-band (Blue/Green/Red/NIR/SWIR1/SWIR2) surface reflectance, 3 timesteps across a growing season, 224x224px @ 30m — see ml/manifests/model_manifest.json. AgriAether\'s live Sentinel-2 pipeline (satellite/SentinelRasterBuilder.ts) currently fetches only RED+NIR at a single date, so no live field can feed this model\'s real input contract yet.',
+    outputType: 'Chip-level dominant-class prediction over 13 USDA CDL classes, with a full softmax probability distribution and a confidence-threshold abstention flag — never per-pixel segmentation.',
+    featureSchema: ['remote_sensing.reflectance.blue', 'remote_sensing.reflectance.green', 'remote_sensing.reflectance.red', 'remote_sensing.reflectance.nir', 'remote_sensing.reflectance.swir1', 'remote_sensing.reflectance.swir2'],
+    trainingDatasetRef: 'ibm-nasa-geospatial/multi-temporal-crop-classification (CC-BY-4.0)',
+    datasetVersion: 'official-split-2023-08-18',
+    trainedAt: 1788810558299,
+    evaluatedAt: 1788810558299,
+    evaluationMetrics: {
+      validationAccuracy: 0.35,
+      validationBalancedAccuracy: 0.2367216117216117,
+      validationMacroF1: 0.3466666666666667,
+      majorityClassBaselineAccuracy: 0.325,
+      validationSampleCount: 40,
+      trainSampleCount: 80,
+      abstentionCoverageFraction: 0.575
+    },
+    deploymentStatus: 'STAGED',
+    limitations:
+      'Real but small experiment: linear head trained on 80 chips, evaluated on 40 official held-out chips. Validation accuracy (35%) is barely above the majority-class baseline (32.5%) — not fit for any production agricultural decision. Domain shift is unverified for any field outside this benchmark\'s CONUS/2022 HLS distribution, and specifically unverified for AgriAether\'s live Iowa test field (see world/realTestField.ts) since the live pipeline does not yet fetch the 6-band/3-timestep input this model requires. See ml/manifests/evaluation_report.json for full per-class metrics and confusion matrix.',
+    confidenceCalibration: 'Softmax max-probability abstention threshold 0.5 (see ml/src/train.py) — a heuristic operating point, not a calibrated probability of real-world correctness.'
   })
 ];

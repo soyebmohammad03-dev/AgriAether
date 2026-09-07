@@ -1,12 +1,15 @@
 import type { SentinelFieldAnalysisResult } from '../satellite/SentinelFieldPipeline';
 import type { DatasetRecord } from '../data/Dataset';
+import type { FieldSectioningResult } from '../analysis/FieldSectioning';
+import type { Recommendation } from '../sensing/RecommendationEngine';
+import type { ModelRecord } from '../sensing/ModelRegistry';
 import { escapeHtml as esc } from './escapeHtml';
 
 export type SatellitePanelState =
   | { status: 'IDLE' }
   | { status: 'LOADING'; message: string }
   | { status: 'ERROR'; message: string }
-  | { status: 'READY'; analysis: SentinelFieldAnalysisResult; dataset: DatasetRecord };
+  | { status: 'READY'; analysis: SentinelFieldAnalysisResult; dataset: DatasetRecord; sectioning: FieldSectioningResult | null; sectionRecommendations: Recommendation[]; knowledgeGraphEvidenceCount: number | null };
 
 /**
  * Real Sentinel-2 status/result panel — every field shown here comes
@@ -22,6 +25,7 @@ export class SatellitePanel {
   private readonly content = document.getElementById('satelliteContent');
   private open = false;
   onFetchRequested: (() => void) | null = null;
+  onGenerateZonesRequested: (() => void) | null = null;
 
   toggle(): boolean {
     this.open = !this.open;
@@ -29,7 +33,7 @@ export class SatellitePanel {
     return this.open;
   }
 
-  render(state: SatellitePanelState): void {
+  render(state: SatellitePanelState, model?: ModelRecord | null): void {
     if (!this.content) return;
 
     const fetchButton = `<button id="satelliteFetchBtn" class="lang-btn">Fetch real Sentinel-2 imagery for this field</button>`;
@@ -62,12 +66,46 @@ export class SatellitePanel {
       ].join('');
     }
 
+    const zoneButton = state.status === 'READY' ? `<button id="satelliteZonesBtn" class="lang-btn">Generate evidence-based management zones</button>` : '';
+
+    const zonesBody =
+      state.status === 'READY' && state.sectioning
+        ? state.sectioning.zones.length
+          ? [
+              `<div class="catalog-muted">${state.sectioning.zones.length} zone(s), ${state.sectioning.unassignedCellCount} cell(s) filtered as too-small regions (min region size enforced) — method: kmeans_ndvi_connected_components.</div>`,
+              ...state.sectioning.generationRecords.map(
+                (r, i) =>
+                  `<div class="catalog-kv"><span>${esc(state.sectioning!.zones[i].name)}</span><span>${r.cellCount} cells, mean NDVI ${r.meanNdvi?.toFixed(3) ?? 'n/a'}, ${r.quality}</span></div>`
+              ),
+              ...state.sectionRecommendations.map((r) => `<div class="catalog-gap">[${r.status}] ${esc(r.proposedAction)}</div>`),
+              state.knowledgeGraphEvidenceCount !== null
+                ? `<div class="catalog-muted">Knowledge Graph: ${state.knowledgeGraphEvidenceCount} observation(s) traceable from this field through its zones.</div>`
+                : ''
+            ].join('')
+          : `<div class="catalog-muted">No zone met the minimum region size — field NDVI is too uniform/small at this resolution to section further.</div>`
+        : state.status === 'READY'
+          ? `<div class="catalog-muted">Not generated yet — press "Generate evidence-based management zones".</div>`
+          : '';
+
+    const modelBody = model
+      ? [
+          `<div class="catalog-kv"><span>Model</span><span>${esc(model.name)}</span></div>`,
+          `<div class="catalog-kv"><span>Status</span><span class="${model.deploymentStatus === 'DEPLOYED' ? 'catalog-ok' : 'catalog-muted'}">${model.deploymentStatus}</span></div>`,
+          `<div class="catalog-kv"><span>Validation accuracy</span><span>${model.evaluationMetrics?.validationAccuracy ?? 'n/a'} (majority-class baseline: ${model.evaluationMetrics?.majorityClassBaselineAccuracy ?? 'n/a'})</span></div>`,
+          `<div class="catalog-muted">Trained/evaluated on real held-out benchmark chips (ibm-nasa-geospatial/multi-temporal-crop-classification) — NOT this field. Field applicability is UNVERIFIED; see ml/README.md.</div>`,
+          `<div class="catalog-muted">${esc(model.limitations)}</div>`
+        ].join('')
+      : '<div class="catalog-muted">No trained model registered.</div>';
+
     this.content.innerHTML = [
       `<div class="catalog-section"><h4>Sentinel-2 L2A — Real Earth Observation</h4>${fetchButton}</div>`,
       `<div class="catalog-section">${body}</div>`,
-      `<div class="catalog-section"><h4>Field Map — Real Boundary + NDVI</h4><canvas id="satelliteFieldCanvas" width="240" height="240"></canvas><div class="catalog-muted">Green polygon: real field boundary. Colored cells: real per-pixel NDVI (only shown once a fetch succeeds) — never a placeholder image.</div></div>`
+      `<div class="catalog-section"><h4>Field Map — Real Boundary + NDVI + Zones</h4><canvas id="satelliteFieldCanvas" width="240" height="240"></canvas><div class="catalog-muted">Green polygon: real field boundary. Colored cells: real per-pixel NDVI. Colored outlines: evidence-based (GIS_DERIVED) management zones, once generated — never a placeholder image.</div></div>`,
+      `<div class="catalog-section"><h4>Evidence-Based Management Zones</h4>${zoneButton}${zonesBody}</div>`,
+      `<div class="catalog-section"><h4>ML Model — Crop Classification (Benchmark Validation Only)</h4>${modelBody}</div>`
     ].join('');
 
     document.getElementById('satelliteFetchBtn')?.addEventListener('click', () => this.onFetchRequested?.());
+    document.getElementById('satelliteZonesBtn')?.addEventListener('click', () => this.onGenerateZonesRequested?.());
   }
 }
