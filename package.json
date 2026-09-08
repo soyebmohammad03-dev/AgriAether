@@ -20,7 +20,7 @@
     "@turf/kinks": "7.4.0",
     "geotiff": "3.0.5",
     "proj4": "2.22.0",
-    "three": "0.162.0"
+    "three": "0.185.1"
   },
   "devDependencies": {
     "@types/geojson": "7946.0.16",
