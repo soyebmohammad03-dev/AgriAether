@@ -7,7 +7,8 @@ export type ModelTask =
   | 'YIELD_ESTIMATION'
   | 'IRRIGATION_DEMAND'
   | 'NUTRIENT_STATUS'
-  | 'CROP_TYPE_CLASSIFICATION';
+  | 'CROP_TYPE_CLASSIFICATION'
+  | 'CROP_VS_NONCROP_CLASSIFICATION';
 export type ModelDeploymentStatus = 'NOT_DEPLOYED' | 'STAGED' | 'DEPLOYED';
 
 /**
@@ -280,46 +281,57 @@ export const PLANNED_MODELS: ModelRecord[] = [
 /**
  * Models that are genuinely trained and evaluated — distinct from
  * PLANNED_MODELS (which are, by definition, never deployed). This array
- * has exactly one entry as of Push 2: a real, frozen Prithvi-EO-2.0-tiny-TL
- * encoder (Apache-2.0, ibm-nasa-geospatial) plus a real trained linear head
- * (80 real training chips / 40 real held-out validation chips from
- * ibm-nasa-geospatial/multi-temporal-crop-classification, CC-BY-4.0, using
- * the dataset's own official split). See ml/manifests/ for the full
- * reproducibility record (checksums, config, metrics) this entry's fields
- * are copied from — never invented here.
+ * has exactly one entry: a real, frozen Prithvi-EO-2.0-tiny-TL encoder
+ * (Apache-2.0, ibm-nasa-geospatial) plus a real trained linear head, on a
+ * binary Crop-vs-Non-Crop task (368 real training chips / 73 real
+ * held-out validation chips, purity-filtered ≥0.6 from a verified
+ * 1,600-train/151-validation download of
+ * ibm-nasa-geospatial/multi-temporal-crop-classification, CC-BY-4.0,
+ * using the dataset's own official split). This is the *second* version
+ * of this entry — an earlier 13-class run scored 35% validation accuracy;
+ * a full ML-quality audit found the bottleneck was chip-level label
+ * noise, not the model, and redesigned the task to binary Crop-vs-
+ * Non-Crop. Two follow-up capacity experiments (a 100M-parameter frozen
+ * encoder, and partial fine-tuning of its last block) did not beat this
+ * result and are NOT represented here — see ml/README.md's audit trail.
+ * See ml/manifests/ for the full reproducibility record (checksums,
+ * config, metrics) this entry's fields are copied from — never invented
+ * here.
  *
  * `deploymentStatus: 'STAGED'`, not `'DEPLOYED'`: the structural DEPLOYED
  * gate (assertModelRecordValid) would actually be satisfied by this
- * model's real artifact/metrics/timestamps, but its real validation
- * accuracy (35%) is only marginally above the real majority-class baseline
- * (32.5%) on a 40-sample validation set — see
- * ml/manifests/evaluation_report.json. STAGED honestly reflects "real,
- * evaluated, not yet trustworthy for a production recommendation."
+ * model's real artifact/metrics/timestamps (93.15% validation accuracy,
+ * well above the 57.53% majority baseline), but AgriAether's live
+ * Sentinel-2 pipeline does not yet supply this model's required 6-band/
+ * 3-timestep input — no live field has ever been fed to this model, so no
+ * live-field accuracy claim can honestly be made. STAGED reflects "real,
+ * strongly evaluated on its benchmark, not yet validated for live-field
+ * deployment."
  */
 export const TRAINED_MODELS: ModelRecord[] = [
   createModelRecord({
-    name: 'AgriAether Crop Type Classification (Prithvi-EO-2.0-tiny-TL, chip-level)',
-    version: 'da94498d27a4',
-    task: 'CROP_TYPE_CLASSIFICATION',
+    name: 'AgriAether Crop vs. Non-Crop Classification (Prithvi-EO-2.0-tiny-TL, chip-level)',
+    version: '6a74db058704',
+    task: 'CROP_VS_NONCROP_CLASSIFICATION',
     inputRequirements: 'HLS 6-band (Blue/Green/Red/NIR/SWIR1/SWIR2) surface reflectance, 3 timesteps across a growing season, 224x224px @ 30m — see ml/manifests/model_manifest.json. AgriAether\'s live Sentinel-2 pipeline (satellite/SentinelRasterBuilder.ts) currently fetches only RED+NIR at a single date, so no live field can feed this model\'s real input contract yet.',
-    outputType: 'Chip-level dominant-class prediction over 13 USDA CDL classes, with a full softmax probability distribution and a confidence-threshold abstention flag — never per-pixel segmentation.',
+    outputType: 'Chip-level binary Crop/Non-Crop prediction, with a full softmax probability distribution and a confidence-threshold abstention flag — never per-pixel segmentation.',
     featureSchema: ['remote_sensing.reflectance.blue', 'remote_sensing.reflectance.green', 'remote_sensing.reflectance.red', 'remote_sensing.reflectance.nir', 'remote_sensing.reflectance.swir1', 'remote_sensing.reflectance.swir2'],
     trainingDatasetRef: 'ibm-nasa-geospatial/multi-temporal-crop-classification (CC-BY-4.0)',
     datasetVersion: 'official-split-2023-08-18',
-    trainedAt: 1788810558299,
-    evaluatedAt: 1788810558299,
+    trainedAt: 1788885518274,
+    evaluatedAt: 1788885518274,
     evaluationMetrics: {
-      validationAccuracy: 0.35,
-      validationBalancedAccuracy: 0.2367216117216117,
-      validationMacroF1: 0.3466666666666667,
-      majorityClassBaselineAccuracy: 0.325,
-      validationSampleCount: 40,
-      trainSampleCount: 80,
-      abstentionCoverageFraction: 0.575
+      validationAccuracy: 0.9315068493150684,
+      validationBalancedAccuracy: 0.9320276497695852,
+      validationMacroF1: 0.9301969783897495,
+      majorityClassBaselineAccuracy: 0.5753424657534246,
+      validationSampleCount: 73,
+      trainSampleCount: 368,
+      abstentionCoverageFraction: 1.0
     },
     deploymentStatus: 'STAGED',
     limitations:
-      'Real but small experiment: linear head trained on 80 chips, evaluated on 40 official held-out chips. Validation accuracy (35%) is barely above the majority-class baseline (32.5%) — not fit for any production agricultural decision. Domain shift is unverified for any field outside this benchmark\'s CONUS/2022 HLS distribution, and specifically unverified for AgriAether\'s live Iowa test field (see world/realTestField.ts) since the live pipeline does not yet fetch the 6-band/3-timestep input this model requires. See ml/manifests/evaluation_report.json for full per-class metrics and confusion matrix.',
-    confidenceCalibration: 'Softmax max-probability abstention threshold 0.5 (see ml/src/train.py) — a heuristic operating point, not a calibrated probability of real-world correctness.'
+      'Real, strongly-performing benchmark result (93.15% validation accuracy vs. 57.53% majority baseline), but a benchmark result, not a live-field one: linear head trained on 368 purity-filtered chips, evaluated on 73 official held-out chips (95% Wilson CI on this sample: approximately [85%, 97%] — genuinely strong, but not a precise number). Domain shift is unverified for any field outside this benchmark\'s CONUS/2022 HLS distribution, and specifically unverified for AgriAether\'s live Iowa test field (see world/realTestField.ts) since the live pipeline does not yet fetch the 6-band/3-timestep input this model requires. The dataset\'s official train/validation split is random, not geographically buffered, so some benchmark train/validation chips are geographically adjacent — a property of the official dataset, disclosed in ml/README.md. See ml/manifests/evaluation_report.json for full per-class metrics and confusion matrix.',
+    confidenceCalibration: 'Softmax max-probability abstention threshold 0.5 (see ml/src/train.py) — a heuristic operating point, not a calibrated probability of real-world correctness. 0/73 validation predictions abstained.'
   })
 ];

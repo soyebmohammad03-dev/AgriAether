@@ -5,7 +5,7 @@ import { importPredictionArtifact } from './PredictionImport';
 import { TRAINED_MODELS } from './ModelRegistry';
 
 const SAMPLE_ARTIFACT_PATH = resolve(__dirname, '../../ml/manifests/sample_predictions.json');
-const model = TRAINED_MODELS.find((m) => m.task === 'CROP_TYPE_CLASSIFICATION')!;
+const model = TRAINED_MODELS.find((m) => m.task === 'CROP_VS_NONCROP_CLASSIFICATION')!;
 
 describe('importPredictionArtifact (real Python-produced fixture)', () => {
   it('parses the real ml/manifests/sample_predictions.json artifact from the actual trained model run', () => {

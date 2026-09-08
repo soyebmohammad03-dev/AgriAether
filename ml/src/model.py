@@ -60,6 +60,26 @@ class LinearHead(nn.Module):
         return self.linear(x)
 
 
+class MLPHead(nn.Module):
+    """A slightly more capable head for the model-capacity experiment: one hidden
+    layer + dropout, still small relative to n=368 training samples. Used only when
+    testing whether the tiny-TL encoder's frozen features (not the linear head) were
+    the capacity bottleneck — pairs with a materially larger frozen encoder (embed_dim
+    768 vs 192), never with the tiny encoder, to isolate the encoder-capacity variable."""
+
+    def __init__(self, in_dim: int, num_classes: int, hidden_dim: int = 128, dropout: float = 0.3):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, num_classes),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+
 @torch.no_grad()
 def extract_features(encoder: PrithviViT, pixels: torch.Tensor) -> torch.Tensor:
     """

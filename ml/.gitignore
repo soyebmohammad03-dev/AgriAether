@@ -4,7 +4,9 @@
 # vendoring the data or weights themselves.
 data/
 checkpoints/
+checkpoints_100m/
 artifacts/
+.venv/
 *.pt
 *.pth
 __pycache__/

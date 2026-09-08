@@ -39,10 +39,14 @@ export interface CropProfile {
 const now = Date.UTC(2026, 0, 1);
 
 /**
- * Two crops only, and only the two present in the real, cited dataset this
- * milestone's ML model was trained on (see ml/manifests/model_manifest.json)
- * — "Corn" and "Soybeans" are literal class labels from the USDA Cropland
- * Data Layer via ibm-nasa-geospatial/multi-temporal-crop-classification.
+ * Two crops only — "Corn" and "Soybeans" are literal class labels from the
+ * USDA Cropland Data Layer via
+ * ibm-nasa-geospatial/multi-temporal-crop-classification, the same dataset
+ * AgriAether's ML model trains on (see ml/manifests/model_manifest.json).
+ * Note: the active model's task is binary Crop vs. Non-Crop classification
+ * (see ml/README.md) — it does not itself distinguish Corn from Soybeans;
+ * these profiles are general-purpose agronomic reference data for crops
+ * this dataset covers, not a claim about the classifier's output classes.
  * No other crop is configured because no validated source for one was
  * available in this session — see UNCONFIGURED_CROP_PROFILE below.
  */

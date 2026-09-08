@@ -21,7 +21,7 @@ from pathlib import Path
 import tifffile
 import torch
 
-from dataset import CLASS_NAMES, LABEL_CLASSES, dominant_class, load_chip_tensor
+from dataset import BINARY_CLASS_NAMES, binary_dominant_class, dominant_class, load_chip_tensor
 from model import LinearHead, extract_features, load_frozen_encoder
 
 ML_ROOT = Path(__file__).resolve().parent.parent
@@ -42,7 +42,7 @@ def main() -> None:
     val_chip_ids = [e["chipId"] for e in manifest["splits"]["validation"]]
 
     encoder, cfg = load_frozen_encoder(ML_ROOT / "manifests" / "prithvi_tiny_config.json", ML_ROOT / "checkpoints" / "Prithvi_EO_V2_tiny_TL.pt")
-    head = LinearHead(cfg["embed_dim"], len(LABEL_CLASSES))
+    head = LinearHead(cfg["embed_dim"], len(BINARY_CLASS_NAMES))
     head.load_state_dict(torch.load(ML_ROOT / "checkpoints" / "head.pt", map_location="cpu", weights_only=True))
     head.eval()
 
@@ -61,7 +61,8 @@ def main() -> None:
         confidence, pred_idx = probs.max(dim=0)
         abstained = bool(confidence.item() < ABSTENTION_CONFIDENCE_THRESHOLD)
 
-        actual_class, actual_purity = dominant_class(mask_path) if mask_path.exists() else (None, None)
+        actual_cdl_class, _cdl_purity = dominant_class(mask_path) if mask_path.exists() else (None, None)
+        actual_binary_class, actual_purity = binary_dominant_class(mask_path) if mask_path.exists() else (None, None)
 
         predictions.append(
             {
@@ -75,14 +76,15 @@ def main() -> None:
                 "inputDataset": model_manifest["dataset"]["name"],
                 "inputGeoReference": chip_geo_reference(image_path),
                 "predictedClassIndex": int(pred_idx.item()),
-                "predictedClassId": LABEL_CLASSES[int(pred_idx.item())],
-                "predictedClassName": CLASS_NAMES[LABEL_CLASSES[int(pred_idx.item())]],
+                "predictedClassId": int(pred_idx.item()),
+                "predictedClassName": BINARY_CLASS_NAMES[int(pred_idx.item())],
                 "confidence": float(confidence.item()),
-                "probabilityDistribution": {CLASS_NAMES[LABEL_CLASSES[i]]: float(p) for i, p in enumerate(probs.tolist())},
+                "probabilityDistribution": {BINARY_CLASS_NAMES[i]: float(p) for i, p in enumerate(probs.tolist())},
                 "abstained": abstained,
                 "abstentionReason": f"max class confidence {confidence.item():.3f} below threshold {ABSTENTION_CONFIDENCE_THRESHOLD}" if abstained else None,
-                "groundTruthClassId": actual_class,
-                "groundTruthClassName": CLASS_NAMES.get(actual_class) if actual_class is not None else None,
+                "groundTruthClassId": actual_binary_class,
+                "groundTruthClassName": BINARY_CLASS_NAMES.get(actual_binary_class) if actual_binary_class is not None else None,
+                "groundTruthCdlClassId": actual_cdl_class,
                 "groundTruthPurity": actual_purity,
                 "predictedAt": int(time.time() * 1000),
                 "fieldApplicability": "UNVERIFIED_FOR_LIVE_FIELD",

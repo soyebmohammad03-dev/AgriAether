@@ -26,7 +26,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from dataset import LABEL_CLASSES, CLASS_NAMES, load_split
+from dataset import BINARY_CLASS_NAMES, load_split
 from metrics import classification_report
 from model import LinearHead, extract_features, load_frozen_encoder
 
@@ -36,6 +36,12 @@ ABSTENTION_CONFIDENCE_THRESHOLD = 0.5
 FEATURE_BATCH_SIZE = 8
 EPOCHS = 300
 LEARNING_RATE = 1e-2
+# Task A per the ML quality-recovery brief: crop vs non-crop, not 13-way CDL
+# classification — the honest first target given ~27% average chip purity
+# (see ml/README.md root-cause analysis). MIN_PURITY additionally drops any
+# chip whose dominant class doesn't actually cover most of it, so the one
+# label per chip is a reasonable summary rather than a coin flip.
+MIN_PURITY = 0.6
 
 
 def sha256_of(path: Path) -> str:
@@ -64,9 +70,17 @@ def main() -> None:
     val_ids = chip_ids_in(manifest, "validation")
 
     print(f"Loading {len(train_ids)} train + {len(val_ids)} validation chips...")
-    train_images, train_labels, train_purity = load_split(ML_ROOT / "data" / "train", train_ids)
-    val_images, val_labels, val_purity = load_split(ML_ROOT / "data" / "validation", val_ids)
-    print(f"After excluding all-nodata chips: {train_images.shape[0]} train, {val_images.shape[0]} validation samples.")
+    train_images, train_labels, train_purity, train_dropped = load_split(
+        ML_ROOT / "data" / "train", train_ids, min_purity=MIN_PURITY, binary=True
+    )
+    val_images, val_labels, val_purity, val_dropped = load_split(
+        ML_ROOT / "data" / "validation", val_ids, min_purity=MIN_PURITY, binary=True
+    )
+    print(
+        f"After excluding all-nodata + purity<{MIN_PURITY} chips: "
+        f"{train_images.shape[0]} train ({train_dropped} dropped for low purity), "
+        f"{val_images.shape[0]} validation ({val_dropped} dropped for low purity)."
+    )
 
     config_path = ML_ROOT / "manifests" / "prithvi_tiny_config.json"
     checkpoint_path = ML_ROOT / "checkpoints" / "Prithvi_EO_V2_tiny_TL.pt"
@@ -79,7 +93,7 @@ def main() -> None:
     val_features = batched_features(encoder, val_images)
     feature_extraction_seconds = time.time() - t0
 
-    num_classes = len(LABEL_CLASSES)
+    num_classes = len(BINARY_CLASS_NAMES)
     head = LinearHead(embed_dim, num_classes)
 
     class_counts = torch.bincount(train_labels, minlength=num_classes).float()
@@ -118,7 +132,7 @@ def main() -> None:
         else None
     )
 
-    class_index_to_name = {i: CLASS_NAMES[LABEL_CLASSES[i]] for i in range(num_classes)}
+    class_index_to_name = {i: BINARY_CLASS_NAMES[i] for i in range(num_classes)}
 
     # Majority-class baseline — the honest bar this model must clear to mean anything (predicting the single most common training class for every validation sample, real computation, not a guess).
     majority_class = int(torch.bincount(train_labels, minlength=num_classes).argmax().item())
@@ -131,8 +145,8 @@ def main() -> None:
 
     trained_at = int(time.time() * 1000)
     model_manifest = {
-        "modelName": "agriaether-crop-classification-head-v1",
-        "task": "CHIP_LEVEL_CROP_CLASSIFICATION",
+        "modelName": "agriaether-crop-vs-noncrop-head-v2",
+        "task": "CHIP_LEVEL_CROP_VS_NONCROP_CLASSIFICATION",
         "baseEncoder": {
             "name": "Prithvi-EO-2.0-tiny-TL",
             "source": "https://huggingface.co/ibm-nasa-geospatial/Prithvi-EO-2.0-tiny-TL",
@@ -159,7 +173,7 @@ def main() -> None:
             "validationSamples": int(val_images.shape[0]),
             "splitStrategy": "dataset's own official chip-level train/validation split (training_data.txt / validation_data.txt) — no chip appears in both.",
         },
-        "classes": [{"classIndex": i, "cdlClassId": LABEL_CLASSES[i], "name": class_index_to_name[i]} for i in range(num_classes)],
+        "classes": [{"classIndex": i, "name": class_index_to_name[i]} for i in range(num_classes)],
         "training": {
             "seed": SEED,
             "epochs": EPOCHS,
@@ -168,6 +182,7 @@ def main() -> None:
             "lossFunction": "CrossEntropyLoss (inverse-frequency class-weighted)",
             "featureAggregation": "mean-pool over all frozen encoder patch tokens (cls token excluded)",
             "abstentionConfidenceThreshold": ABSTENTION_CONFIDENCE_THRESHOLD,
+            "minChipPurity": MIN_PURITY,
         },
         "runtime": {
             "platform": platform.platform(),
@@ -199,13 +214,15 @@ def main() -> None:
             "validationAccuracyPredictingMajorityClassAlways": majority_baseline_accuracy,
         },
         "chipPurity": {
+            "minPurityThreshold": MIN_PURITY,
             "trainMeanDominantClassFraction": float(np.mean(train_purity)) if train_purity else None,
             "validationMeanDominantClassFraction": float(np.mean(val_purity)) if val_purity else None,
+            "trainDroppedLowPurityCount": train_dropped,
+            "validationDroppedLowPurityCount": val_dropped,
         },
         "warnings": [
-            "This evaluates CHIP-LEVEL dominant-class classification (one label per 224x224 chip), not per-pixel segmentation.",
-            "Sample size is small (tens of chips per split, real numbers in trainMetrics/validationMetrics above) — a real, valid, but small experiment, not a production-scale evaluation.",
-            "Several of the dataset's 13 documented classes may be absent from this small sample — see classesAbsentFromEvaluation in each report.",
+            "This evaluates CHIP-LEVEL crop-vs-non-crop classification (one label per 224x224 chip), not per-pixel segmentation.",
+            f"Chips with dominant-class purity below {MIN_PURITY} were excluded from both train and validation — see chipPurity above for counts. This changes which chips are evaluated; it does not remove difficult-but-valid chips arbitrarily, only chips whose single dominant-class label would not honestly describe the chip.",
         ],
     }
     (ML_ROOT / "manifests" / "evaluation_report.json").write_text(json.dumps(evaluation_report, indent=2))

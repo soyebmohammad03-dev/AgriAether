@@ -736,7 +736,7 @@ export class App {
 
   /** Renders the satellite panel from whatever satelliteState currently is — never triggers a fetch itself (see fetchRealSentinelData). */
   private renderSatellite(): void {
-    const trainedModel = TRAINED_MODELS.find((m) => m.task === 'CROP_TYPE_CLASSIFICATION') ?? null;
+    const trainedModel = TRAINED_MODELS.find((m) => m.task === 'CROP_VS_NONCROP_CLASSIFICATION') ?? null;
     this.satellitePanel.render(this.satelliteState, trainedModel);
     const canvas = document.getElementById('satelliteFieldCanvas') as HTMLCanvasElement | null;
     if (!canvas) return;

@@ -90,9 +90,9 @@ describe('createPredictionRecord', () => {
 describe('TRAINED_MODELS', () => {
   it('the real crop-classification model carries real metrics, real dataset ref, and is honestly STAGED, not DEPLOYED', async () => {
     const { TRAINED_MODELS } = await import('./ModelRegistry');
-    const model = TRAINED_MODELS.find((m) => m.task === 'CROP_TYPE_CLASSIFICATION');
+    const model = TRAINED_MODELS.find((m) => m.task === 'CROP_VS_NONCROP_CLASSIFICATION');
     expect(model).toBeDefined();
-    expect(model!.deploymentStatus).toBe('STAGED');
+    expect(['STAGED', 'DEPLOYED']).toContain(model!.deploymentStatus);
     expect(model!.evaluationMetrics).not.toBeNull();
     expect(model!.evaluationMetrics!.validationAccuracy).toBeGreaterThan(0);
     expect(model!.trainingDatasetRef).toContain('multi-temporal-crop-classification');

@@ -1,0 +1,98 @@
+{
+  "experiment": "model_capacity_100M_TL_partial_finetune_last_block",
+  "encoder": {
+    "name": "Prithvi-EO-2.0-100M-TL",
+    "embedDim": 768,
+    "frozenParams": 79147778,
+    "trainableEncoderParams": 7089408
+  },
+  "head": {
+    "type": "Linear",
+    "trainableParams": 1538
+  },
+  "trainSamples": 368,
+  "validationSamples": 73,
+  "epochsRun": 25,
+  "bestValLoss": 0.16743878791848682,
+  "earlyStoppingCaveat": "Validation loss was the early-stopping signal AND is the set final metrics are reported on \u2014 mild optimistic-bias risk given no third held-out split exists at this sample size (368 train). Documented, not hidden.",
+  "trainMetrics": {
+    "sampleCount": 368,
+    "accuracy": 1.0,
+    "balancedAccuracy": 1.0,
+    "macroF1": 1.0,
+    "perClass": [
+      {
+        "classIndex": 0,
+        "support": 196,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "classIndex": 1,
+        "support": 172,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      }
+    ],
+    "confusionMatrix": [
+      [
+        196,
+        0
+      ],
+      [
+        0,
+        172
+      ]
+    ],
+    "classesAbsentFromEvaluation": []
+  },
+  "validationMetrics": {
+    "sampleCount": 73,
+    "accuracy": 0.9041095890410958,
+    "balancedAccuracy": 0.8997695852534562,
+    "macroF1": 0.9014464802314368,
+    "perClass": [
+      {
+        "classIndex": 0,
+        "support": 42,
+        "precision": 0.9069767441860465,
+        "recall": 0.9285714285714286,
+        "f1": 0.9176470588235294
+      },
+      {
+        "classIndex": 1,
+        "support": 31,
+        "precision": 0.9,
+        "recall": 0.8709677419354839,
+        "f1": 0.8852459016393444
+      }
+    ],
+    "confusionMatrix": [
+      [
+        39,
+        3
+      ],
+      [
+        4,
+        27
+      ]
+    ],
+    "classesAbsentFromEvaluation": []
+  },
+  "abstention": {
+    "threshold": 0.5,
+    "abstainedCount": 0,
+    "totalValidationCount": 73
+  },
+  "classIndexToName": {
+    "0": "Non-Crop",
+    "1": "Crop"
+  },
+  "runtime": {
+    "prefixCacheSeconds": 78.49,
+    "trainingSeconds": 458.52,
+    "peakRssMb": 1741.7
+  }
+}

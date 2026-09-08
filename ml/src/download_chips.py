@@ -27,8 +27,14 @@ MANIFEST_DIR = ML_ROOT / "manifests"
 
 BASE_URL = "https://data.source.coop/clarkcga/multi-temporal-crop-classification"
 SEED = 42
-N_TRAIN = 80
-N_VAL = 40
+# Bumped from 80/40 (2% of the 3,854-chip dataset) — the root cause of the
+# 35% validation accuracy was mostly sample size + chip-level label noise,
+# not model choice. 720/180 (~23% of the dataset) is the largest sample that
+# fits this machine's disk budget (~1.7GB) alongside the venv/checkpoints
+# already using most of an 8GB-free disk. Still the dataset's own official
+# train/validation split, still a per-chip (not per-pixel) disjoint sample.
+N_TRAIN = 720
+N_VAL = 180
 
 
 def sha256_of(path: Path) -> str:
@@ -37,14 +43,28 @@ def sha256_of(path: Path) -> str:
     return h.hexdigest()
 
 
-def download(url: str, dest: Path) -> None:
+def download(url: str, dest: Path, attempts: int = 4) -> None:
     if dest.exists():
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
     # The Source Cooperative CDN rejects the default urllib User-Agent (403) — a real browser-like UA is required, not a workaround around any access control this dataset actually intends (it's a public, unauthenticated CC-BY-4.0 bucket).
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 AgriAether-ML-Pipeline/1.0"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        dest.write_bytes(resp.read())
+    # Retries a flaky read (this batch hit real SSL read timeouts twice over ~900 sequential
+    # HTTPS requests) — without this, one bad request kills the whole run with no checkpoint
+    # beyond whatever was already written to disk.
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = resp.read()
+            tmp = dest.with_suffix(dest.suffix + ".part")
+            tmp.write_bytes(data)
+            tmp.rename(dest)
+            return
+        except (TimeoutError, OSError) as e:
+            last_error = e
+            print(f"  retry {attempt + 1}/{attempts} for {url}: {e}", file=sys.stderr)
+    raise RuntimeError(f"Failed to download {url} after {attempts} attempts") from last_error
 
 
 def load_split(name: str) -> list[str]:
@@ -55,11 +75,15 @@ def main() -> None:
     train_ids = load_split("training_data.txt")
     val_ids = load_split("validation_data.txt")
 
-    rng = random.Random(SEED)
-    train_sample = sorted(rng.sample(train_ids, N_TRAIN))
-    val_sample = sorted(rng.sample(val_ids, N_VAL))
+    # Separate Random instances per split — a single shared instance means sample()'s
+    # internal state after drawing train_sample depends on N_TRAIN, so changing N_TRAIN
+    # would silently reshuffle val_sample too, even with N_VAL unchanged (verified: this
+    # was a real bug, not theoretical — confirmed val_sample differs when only N_TRAIN
+    # changes with a shared rng). The validation set must be stable under any N_TRAIN change.
+    train_sample = sorted(random.Random(SEED).sample(train_ids, N_TRAIN))
+    val_sample = sorted(random.Random(SEED + 1).sample(val_ids, N_VAL))
 
-    manifest = {"seed": SEED, "source": BASE_URL, "license": "CC-BY-4.0", "splits": {}}
+    manifest = {"seed": SEED, "source": BASE_URL, "license": "CC-BY-4.0", "splits": {}, "skippedChips": []}
 
     for split_name, chip_ids in (("train", train_sample), ("validation", val_sample)):
         entries = []
@@ -69,8 +93,16 @@ def main() -> None:
             image_path = DATA_DIR / split_name / "hls" / f"{chip_id}_merged.tif"
             mask_path = DATA_DIR / split_name / "masks" / f"{chip_id}.mask.tif"
             print(f"[{split_name}] {chip_id}", file=sys.stderr)
-            download(image_url, image_path)
-            download(mask_url, mask_path)
+            try:
+                download(image_url, image_path)
+                download(mask_url, mask_path)
+            except RuntimeError as e:
+                # A single chip failing after retries (e.g. server-side rate limiting after
+                # ~900 sequential requests) shouldn't discard the rest of a long batch —
+                # skip it and record it, never silently drop it from the manifest's account.
+                print(f"  SKIPPING {chip_id}: {e}", file=sys.stderr)
+                manifest["skippedChips"].append({"chipId": chip_id, "split": split_name, "reason": str(e)})
+                continue
             entries.append(
                 {
                     "chipId": chip_id,
@@ -83,7 +115,12 @@ def main() -> None:
         manifest["splits"][split_name] = entries
 
     (MANIFEST_DIR / "dataset_manifest.json").write_text(json.dumps(manifest, indent=2))
-    print(f"Wrote manifest for {len(train_sample)} train + {len(val_sample)} validation chips.", file=sys.stderr)
+    print(
+        f"Wrote manifest for {len(manifest['splits']['train'])} train + "
+        f"{len(manifest['splits']['validation'])} validation chips "
+        f"({len(manifest['skippedChips'])} skipped after retries).",
+        file=sys.stderr,
+    )
 
 
 if __name__ == "__main__":
