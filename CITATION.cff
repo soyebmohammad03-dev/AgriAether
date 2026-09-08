@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use AgriAether in your work, please cite it as below."
+title: "AgriAether: An Agricultural Intelligence Platform Combining Satellite Remote Sensing, Geospatial Analysis, and Machine Learning"
+type: software
+version: 1.0.0
+date-released: 2026-09-09
+authors:
+  - family-names: Mohammad
+    given-names: Soyeb
+license: MIT
+repository-code: "https://github.com/soyebmohammad03-dev/AgriAether"
+keywords:
+  - agriculture
+  - agritech
+  - precision-agriculture
+  - machine-learning
+  - remote-sensing
+  - satellite-imagery
+  - sentinel-2
+  - geospatial
+  - crop-monitoring
+  - agricultural-ai

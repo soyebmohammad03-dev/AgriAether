@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 1280px; height: 640px;
+    background: linear-gradient(135deg, #0b1f14 0%, #10331f 45%, #163f26 100%);
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    overflow: hidden;
+    position: relative;
+  }
+  .grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px);
+    background-size: 64px 64px;
+  }
+  .glow {
+    position: absolute; width: 700px; height: 700px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(120,220,150,0.20) 0%, rgba(120,220,150,0) 70%);
+    top: -220px; right: -180px;
+  }
+  .content {
+    position: relative; z-index: 2;
+    padding: 72px 80px;
+    display: flex; flex-direction: column; justify-content: center;
+    height: 640px; box-sizing: border-box;
+  }
+  .kicker {
+    color: #7fe3a1; font-size: 22px; font-weight: 600; letter-spacing: 3px;
+    text-transform: uppercase; margin-bottom: 18px;
+  }
+  .title {
+    color: #ffffff; font-size: 96px; font-weight: 800; letter-spacing: -2px;
+    margin: 0 0 8px 0; line-height: 1;
+  }
+  .subtitle {
+    color: #d7f5e1; font-size: 34px; font-weight: 500; margin: 0 0 34px 0;
+  }
+  .pipeline {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    margin-bottom: 30px;
+  }
+  .chip {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(127,227,161,0.35);
+    color: #eafff1;
+    font-size: 21px; font-weight: 600;
+    padding: 10px 20px; border-radius: 999px;
+  }
+  .arrow { color: #7fe3a1; font-size: 22px; }
+  .footer {
+    color: #9fd9b3; font-size: 20px; font-weight: 500;
+  }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="glow"></div>
+  <div class="content">
+    <div class="kicker">Agricultural Intelligence Platform</div>
+    <div class="title">AgriAether</div>
+    <div class="subtitle">Satellite + Geospatial + Machine Learning for Precision Agriculture</div>
+    <div class="pipeline">
+      <span class="chip">Sentinel-2 Imagery</span>
+      <span class="arrow">→</span>
+      <span class="chip">Management Zones</span>
+      <span class="arrow">→</span>
+      <span class="chip">Crop ML Benchmark</span>
+      <span class="arrow">→</span>
+      <span class="chip">Digital Twin</span>
+      <span class="arrow">→</span>
+      <span class="chip">Recommendations</span>
+    </div>
+    <div class="footer">Open source · TypeScript · Real Sentinel-2 data · Prithvi-EO-2.0 ML benchmark</div>
+  </div>
+</body>
+</html>

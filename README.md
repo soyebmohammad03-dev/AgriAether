@@ -1,26 +1,47 @@
 # AgriAether
 
-AgriAether is an early-stage, open-source foundation for an agricultural
-intelligence, simulation, digital-twin, and autonomous field-operations
-platform. This repository is not yet that platform — it is currently a
-**simulation core with a Farm/Field/Zone/Sensor domain model, a demo
-geospatial layer, one real external data source (weather), an agricultural
-sensing/analytics architecture that currently reports every remote-sensing
-analysis as honestly unsupported** (no camera or soil sensor exists yet —
-see "Remote sensing & agricultural analytics" below), **and a real
-GeoJSON/raster ingestion pipeline exercised end-to-end by a deterministic
-fixture** (see "Real agricultural data pipeline" below), **plus a real CSV/
-GeoJSON import UI with validation, deduplication, and an auditable report**
-(see "Real agricultural data ingestion + field data platform" below) — no
-live external dataset provider beyond weather is wired up, by design.
-Phases 10–15 (see "Phases 10–15: intelligence, autonomy, farmer/community,
-and hardening" below) then built a Digital Twin, Knowledge Graph,
-recommendation/irrigation/nutrient intelligence, simulation-only autonomous
-mission planning, farmer/community/offline/localization layers, an
-explainability/research layer, and production hardening — all still over
-this same simulation core. **No real ML model, no real hardware, and no
-real cloud sync exist anywhere in this repository**; every place that would
-need one says so explicitly instead of faking it.
+**AI-powered agricultural intelligence platform** — Sentinel-2 satellite
+imagery, geospatial field analysis, a real trained crop-classification
+model, evidence-based management zones, agricultural recommendations, a
+Digital Twin / Knowledge Graph, and a simulation-first autonomous
+field-operations architecture.
+
+[![CI](https://github.com/soyebmohammad03-dev/AgriAether/actions/workflows/ci.yml/badge.svg)](https://github.com/soyebmohammad03-dev/AgriAether/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tests](https://img.shields.io/badge/tests-469%20passing-brightgreen)](#testing)
+[![ML: Crop vs Non-Crop](https://img.shields.io/badge/ML%20benchmark-93.15%25%20val.%20accuracy-blue)](#machine-learning)
+
+## What AgriAether does
+
+AgriAether combines **satellite remote sensing** (real Sentinel-2 L2A
+imagery + NDVI), **geospatial field analysis** (evidence-based management
+zones derived from real per-pixel vegetation index clustering),
+**agricultural machine learning** (a real trained Prithvi-EO-2.0
+crop-classification benchmark), a **Digital Twin and Knowledge Graph** of
+farm state, an **agricultural recommendation engine**, and a
+**simulation-first autonomous field-operations** core (drone mission
+planning, fleet management, edge inference) into one coherent platform —
+built specifically to never let a simulated, estimated, or benchmark
+result quietly pass itself off as a live, measured one. Every
+`Observation`, `PredictionRecord`, and `ModelRecord` carries an explicit
+provenance/status field enforcing that distinction structurally, not just
+in prose.
+
+**This is a research/demo-stage platform, not a production SaaS.** It is
+currently a **simulation core with a Farm/Field/Zone/Sensor domain model,
+a demo geospatial layer, real external data sources (weather + Sentinel-2
+satellite imagery), an agricultural sensing/analytics architecture that
+reports unsupported analyses honestly rather than guessing** (see "Remote
+sensing & agricultural analytics" below), **a real GeoJSON/raster
+ingestion pipeline, a real CSV/GeoJSON import UI, and a real trained ML
+benchmark** (see "Machine Learning" below) — layered under a Digital
+Twin, Knowledge Graph, recommendation/irrigation/nutrient intelligence,
+simulation-only autonomous mission planning, and farmer/community/offline
+layers. **No real hardware and no real cloud sync exist anywhere in this
+repository**; every place that would need one says so explicitly instead
+of faking it. See "Real / staged / simulated" below for the exact
+breakdown, and "Project status" for the full detail.
 
 ## Project status (be skeptical of anything that sounds bigger than this)
 
@@ -1226,11 +1247,15 @@ some train/validation chip pairs are geographically adjacent — see
 imply.
 
 **I. Limitations**:
-- This is **benchmark validation performance**, not a live-field accuracy
-  claim. AgriAether's live Sentinel-2 pipeline currently fetches RED+NIR
-  at a single date; this model needs 6 bands × 3 timesteps. No field in
-  this codebase (including the real Iowa test field) has ever been fed to
-  this model, and no `PredictionRecord` claims `inputSource: 'LIVE_FIELD'`.
+- **These are benchmark validation results for the evaluated
+  Crop-vs-Non-Crop task. They are not a claim of 93.15% accuracy on
+  arbitrary real-world farms.** AgriAether's live Sentinel-2 pipeline
+  currently fetches RED+NIR at a single date; this model needs 6 bands ×
+  3 timesteps — the live field pipeline and the trained model's input
+  requirements are **not yet equivalent** for validated live-field
+  inference. No field in this codebase (including the real Iowa test
+  field) has ever been fed to this model, and no `PredictionRecord`
+  claims `inputSource: 'LIVE_FIELD'`.
 - 73 validation samples is a real but small evaluation; the 95% Wilson
   confidence interval is roughly [85%, 97%] — wide enough that 93.15%
   should be read as "genuinely strong on this benchmark," not as a
@@ -1243,7 +1268,45 @@ imply.
   intentionally, until live-field input compatibility and field-specific
   ground truth exist.
 
-## Local development
+## Real / staged / simulated
+
+Every capability below is labeled by what it actually is today — not
+what it's designed to eventually become.
+
+| Capability | Status |
+|---|---|
+| Sentinel-2 satellite imagery ingestion | ✅ Real |
+| Reflectance conversion + NDVI | ✅ Real |
+| Geospatial field processing (CRS, clipping, spatial stats) | ✅ Real |
+| Evidence-based management zones (GIS_DERIVED) | ✅ Real |
+| Crop profiles (Corn, Soybeans) | ✅ Real |
+| Agricultural analysis / spectral index engine | ✅ Real (gated on real band availability) |
+| Disease/pest evidence logic | ✅ Real (evidence, not diagnosis) |
+| Recommendation engine | ✅ Real |
+| Trained agricultural ML benchmark (Crop vs. Non-Crop) | ✅ Real — see "Machine Learning" |
+| Digital Twin | ✅ Real |
+| Knowledge Graph | ✅ Real |
+| Persistence (IndexedDB) | ✅ Real |
+| Reporting / UI | ✅ Real |
+| ML model for **live-field** inference | 🟡 Staged — model is real and benchmarked, but the live Sentinel-2 pipeline doesn't yet supply its required 6-band/3-timestep input |
+| Any prediction requiring field-specific ground truth | 🟡 Staged — validation-required |
+| Drone flight, camera, GPS/IMU/soil hardware | 🔵 Simulated — `SimulatedFlightController` only; `UnimplementedRealHardwareDevice` always fails into `ERROR` rather than faking a reading |
+| Autonomous mission planning / fleet management | 🔵 Simulated — real planning logic, simulated execution |
+| Remote cloud sync | 🔵 Not implemented — `OfflineSync.ts` never reports `SYNCED` |
+
+## Technology stack
+
+- **Frontend**: TypeScript, Vite, Three.js (3D scene), Vitest (469 tests)
+- **Geospatial**: Turf.js, `geotiff`, `proj4` — no hand-rolled GIS engine
+- **ML pipeline** (`ml/`, separate from the npm app): Python, PyTorch,
+  a frozen Prithvi-EO-2.0 encoder (IBM/NASA)
+- **Persistence**: IndexedDB (browser), with an in-memory fallback for
+  tests/non-browser environments
+- **External data**: Open-Meteo (weather, keyless), Microsoft Planetary
+  Computer (Sentinel-2 STAC), Hugging Face / Source Cooperative (the ML
+  benchmark dataset)
+
+## Quick start
 
 ```bash
 npm install
@@ -1254,6 +1317,30 @@ npm run build      # typecheck + production build
 ```
 
 No `.env` file is required to run the app — see "Security," above.
+For the ML pipeline (a separate Python environment, not part of the npm
+app), see `ml/README.md`.
+
+## Configuration
+
+`.env.example` documents the one environment variable this project's
+pattern supports (`VITE_WEATHER_API_KEY`) — unused today, since the
+active weather provider (Open-Meteo) is keyless. Copy it to `.env` only
+if you're wiring in a provider that needs one; see the Security section
+above for why a real secret can't be safely used directly from this
+frontend as it stands.
+
+## Testing
+
+```bash
+npm run test        # vitest — 469 tests across 101 files
+npm run typecheck    # tsc --noEmit
+npm run build        # full production build
+```
+
+CI (`.github/workflows/ci.yml`) runs all three on every push and pull
+request to `main`, plus a lightweight Python syntax/manifest-integrity
+check for `ml/` (it does not download the multi-GB dataset on every run
+— see `ml/README.md` to reproduce the ML pipeline locally).
 
 ## Architecture
 
@@ -1409,12 +1496,14 @@ pipeline without the UI changing at all.
     milestone).
 
 **Still not started / genuinely open:**
-- **A first real trained ML model.** No labeled agricultural dataset exists
-  in this repository (real or high-fidelity simulated with verified
-  labels). Every `ModelRegistry` entry stays `NOT_DEPLOYED`; every
-  prediction request returns `NOT_AVAILABLE` with a stated reason. This is
-  the single biggest remaining gap between "intelligence platform" and
-  "intelligence platform with real intelligence in it."
+- ~~A first real trained ML model~~ — done: a real Prithvi-EO-2.0-tiny-TL
+  (frozen) + trained linear head Crop-vs-Non-Crop classifier, 93.15%
+  validation accuracy on a real, official, leakage-checked benchmark (see
+  "Machine Learning" below and `ml/README.md`). What's still open: this
+  model is `STAGED`, not `DEPLOYED` — it has never been fed a real
+  AgriAether field, because the live Sentinel-2 pipeline doesn't yet fetch
+  the 6-band/3-timestep input it requires. Every live-field prediction
+  request still returns `NOT_AVAILABLE` with a stated reason.
 - ~~A real (non-`DEMO_ONLY`) field boundary / CRS pipeline exercised
   end-to-end~~ — done: `world/realTestField.ts` is a real, non-Null-Island
   WGS84 field, and `satellite/` ingests real Sentinel-2 imagery against it
@@ -1427,3 +1516,64 @@ pipeline without the UI changing at all.
   `UnimplementedRealHardwareDevice` always fails into `ERROR`.
 - **A real remote sync backend.** `OfflineSync.ts` is honest that one
   doesn't exist; `deriveSyncStatus` never reports `SYNCED`/`PENDING`.
+
+## Limitations
+
+- **Research/demo stage, not production.** No real hardware, no live ML
+  field inference, no remote sync backend — see "Real / staged /
+  simulated" above.
+- **The 93.15% ML result is a benchmark number**, not a live-field
+  accuracy claim — see "Machine Learning" for the full caveat.
+- **Two crops configured** (Corn, Soybeans) — `CROP_PROFILES` in
+  `src/agriculture/CropProfile.ts` — because those are the only two with
+  a validated data source in this project; no other crop's agronomic
+  thresholds are invented.
+- **One real external dataset provider beyond weather and Sentinel-2** —
+  everything else in the ingestion pipeline (CSV/GeoJSON import) is
+  user-supplied data, not a live third-party feed.
+- Large chunk-size build warning (`dist/assets/index-*.js` ~926KB) is a
+  known, un-addressed item — not a functional bug, just unsplit.
+
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for
+setup, test requirements, and this project's coding expectations
+(provenance/honesty is load-bearing here, not optional). This project
+follows the [Contributor Covenant](CODE_OF_CONDUCT.md). Found a security
+issue? See [SECURITY.md](SECURITY.md) — please don't open a public issue
+for it.
+
+## License and attribution
+
+AgriAether's own source code is [MIT licensed](LICENSE). Third-party
+components keep their own licenses — this project does not, and cannot,
+relicense them:
+
+| Component | License / terms | Source |
+|---|---|---|
+| AgriAether source code (this repository) | MIT | — |
+| Prithvi-EO-2.0 (encoder + vendored model code) | Apache 2.0 | IBM / NASA (`ibm-nasa-geospatial`) |
+| `multi-temporal-crop-classification` dataset | CC-BY-4.0 | Clark University CGA / IBM-NASA |
+| Sentinel-2 imagery | Copernicus (free & open) | ESA / Copernicus Programme, via Microsoft Planetary Computer |
+| Weather data | Open-Meteo (keyless, free tier) | Open-Meteo.com |
+| npm / PyPI dependencies | Various (see `package.json` / `ml/requirements.txt`) | Respective authors |
+
+AgriAether does not vendor, redistribute, or claim ownership of any
+external dataset or pretrained model — `ml/data/`, `ml/checkpoints/`, and
+`ml/.venv/` are gitignored and reproduced locally via the scripts in
+`ml/README.md`, never committed. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+for the full detail, and [CHANGELOG.md](CHANGELOG.md) for release history.
+
+## Citation
+
+If you use AgriAether in academic or research work, see
+[CITATION.cff](CITATION.cff) for citation metadata (also available via
+GitHub's "Cite this repository" button).
+
+## Acknowledgements
+
+- **[Prithvi-EO-2.0](https://huggingface.co/ibm-nasa-geospatial/Prithvi-EO-2.0-tiny-TL)** — IBM & NASA's geospatial foundation model, used here as a frozen encoder.
+- **[multi-temporal-crop-classification](https://huggingface.co/datasets/ibm-nasa-geospatial/multi-temporal-crop-classification)** — the official benchmark dataset this project's ML result is trained and evaluated on.
+- **[Copernicus / Sentinel-2](https://dataspace.copernicus.eu/)** and **[Microsoft Planetary Computer](https://planetarycomputer.microsoft.com/)** — real satellite imagery access.
+- **[Open-Meteo](https://open-meteo.com/)** — keyless weather data.
+- **[Turf.js](https://turfjs.org/)**, **[geotiff.js](https://geotiffjs.github.io/)**, **[proj4js](http://proj4js.org/)** — the geospatial primitives this project builds on rather than reimplementing.

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  typescript:
+    name: TypeScript (typecheck, test, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test -- --run
+      - run: npm run build
+
+  ml-lint:
+    name: ML pipeline (syntax check, no dataset download)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Deliberately does NOT install torch/download the dataset — that's a multi-GB,
+      # multi-minute pull unsuited to running on every push. This just catches syntax
+      # errors and import-order mistakes in the ML pipeline's own source.
+      - run: python -m py_compile ml/src/*.py
+      - run: python -c "import json; [json.load(open(f)) for f in ['ml/manifests/model_manifest.json', 'ml/manifests/evaluation_report.json', 'ml/manifests/dataset_manifest.json']]"
